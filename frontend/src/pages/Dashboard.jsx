@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCatalog, getCatalogQuality } from '../api/index.js';
+import { getCatalog, getCatalogQuality, getReplicaStats } from '../api/index.js';
 
 const DEPT_LABELS = {
   engineering: { label: 'Engineering', className: 'badge-eng' },
@@ -46,11 +46,23 @@ function SensitivityBar({ datasets }) {
   );
 }
 
-function DatasetCard({ dataset, isStale }) {
+// Map dataset_id to table name for live counts
+const DATASET_TABLE_MAP = {
+  building_permits: 'building_permits',
+  water_mains: 'water_mains',
+  bus_stops: 'bus_stops',
+};
+
+function DatasetCard({ dataset, isStale, replicaStats }) {
   const dept = DEPT_LABELS[dataset.department] || { label: dataset.department, className: '' };
   const since = dataset.last_updated
     ? Math.floor((Date.now() - new Date(dataset.last_updated)) / 86400000)
     : null;
+
+  // Get live record count from replica stats
+  const tableName = DATASET_TABLE_MAP[dataset.dataset_id];
+  const liveCount = tableName && replicaStats?.tables ? replicaStats.tables[tableName] : null;
+  const bySource = tableName && replicaStats?.by_source ? replicaStats.by_source[tableName] : null;
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -71,7 +83,14 @@ function DatasetCard({ dataset, isStale }) {
       <div style={{ display: 'flex', gap: '1.5rem' }}>
         <div>
           <div className="stat-label" style={{ marginBottom: '0.15rem' }}>Records</div>
-          <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{dataset.record_count ?? '—'}</div>
+          <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{liveCount?.toLocaleString() ?? '—'}</div>
+          {bySource && Object.keys(bySource).length > 0 && (
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+              {Object.entries(bySource).map(([src, cnt]) => (
+                <span key={src} style={{ marginRight: '0.5rem' }}>{src === 'kitchener' ? 'KIT' : 'WAT'}: {cnt.toLocaleString()}</span>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <div className="stat-label" style={{ marginBottom: '0.15rem' }}>Last Updated</div>
@@ -114,14 +133,16 @@ function DatasetCard({ dataset, isStale }) {
 export default function Dashboard() {
   const [catalog, setCatalog] = useState(null);
   const [quality, setQuality] = useState(null);
+  const [replicaStats, setReplicaStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    Promise.all([getCatalog(), getCatalogQuality()])
-      .then(([cat, qual]) => {
+    Promise.all([getCatalog(), getCatalogQuality(), getReplicaStats()])
+      .then(([cat, qual, stats]) => {
         setCatalog(cat);
         setQuality(qual);
+        setReplicaStats(stats);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -132,7 +153,7 @@ export default function Dashboard() {
 
   const datasets = catalog?.datasets ?? [];
   const staleIds = new Set((quality?.stale_datasets ?? []).map((s) => s.dataset_id));
-  const totalRecords = datasets.reduce((sum, d) => sum + (d.record_count ?? 0), 0);
+  const totalRecords = replicaStats?.total_records ?? 0;
   const deptCount = new Set(datasets.map((d) => d.department)).size;
   const staleCount = staleIds.size;
 
@@ -184,7 +205,7 @@ export default function Dashboard() {
       <div className="section-title mb-sm">Dataset Health</div>
       <div className="card-grid card-grid-2">
         {datasets.map((ds) => (
-          <DatasetCard key={ds.dataset_id} dataset={ds} isStale={staleIds.has(ds.dataset_id)} />
+          <DatasetCard key={ds.dataset_id} dataset={ds} isStale={staleIds.has(ds.dataset_id)} replicaStats={replicaStats} />
         ))}
       </div>
     </div>

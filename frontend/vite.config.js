@@ -14,6 +14,7 @@ export default defineConfig({
       '/health':  'http://localhost:8000',
       '/sync':    'http://localhost:8000',
       '/geo':     'http://localhost:8000',
+      '/replica': 'http://localhost:8000',
     },
   },
 });

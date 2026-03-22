@@ -34,9 +34,10 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     triggered_by TEXT  -- 'manual' | 'cron'
 );
 
--- Building permits from City of Kitchener (full dataset)
+-- Building permits from multiple cities
 CREATE TABLE IF NOT EXISTS building_permits (
-    permit_no TEXT PRIMARY KEY,
+    permit_no TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT 'kitchener',
     parcel_id REAL,
     folder_rsn INTEGER,
     permit_type TEXT,
@@ -80,20 +81,21 @@ CREATE TABLE IF NOT EXISTS building_permits (
     storeys_proposed TEXT,
     gfa_groupc_constr_sqft TEXT,
     new_floor_area_sqft TEXT,
-    source_id TEXT DEFAULT 'kitchener',
-    synced_at TEXT
+    synced_at TEXT,
+    PRIMARY KEY (permit_no, source_id)
 );
 
--- Water mains from City of Kitchener
+-- Water mains from multiple cities
 CREATE TABLE IF NOT EXISTS water_mains (
-    watmain_id TEXT PRIMARY KEY,
+    watmain_id TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT 'kitchener',
     status TEXT,
     pressure_zone TEXT,
     pipe_size INTEGER,
     material TEXT,
     criticality INTEGER,
-    source_id TEXT DEFAULT 'kitchener',
-    synced_at TEXT
+    synced_at TEXT,
+    PRIMARY KEY (watmain_id, source_id)
 );
 
 -- Bus stops from City of Kitchener / GRT
@@ -114,8 +116,10 @@ CREATE INDEX IF NOT EXISTS idx_building_permits_status ON building_permits(permi
 CREATE INDEX IF NOT EXISTS idx_building_permits_issue_year ON building_permits(issue_year);
 CREATE INDEX IF NOT EXISTS idx_building_permits_work_type ON building_permits(work_type);
 CREATE INDEX IF NOT EXISTS idx_building_permits_application_date ON building_permits(application_date);
+CREATE INDEX IF NOT EXISTS idx_building_permits_source ON building_permits(source_id);
 CREATE INDEX IF NOT EXISTS idx_water_mains_pressure_zone ON water_mains(pressure_zone);
 CREATE INDEX IF NOT EXISTS idx_water_mains_material ON water_mains(material);
+CREATE INDEX IF NOT EXISTS idx_water_mains_source ON water_mains(source_id);
 CREATE INDEX IF NOT EXISTS idx_bus_stops_municipality ON bus_stops(municipality);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_dataset ON sync_runs(dataset_id);
 CREATE INDEX IF NOT EXISTS idx_sync_runs_status ON sync_runs(status);
@@ -125,7 +129,7 @@ INSERT OR IGNORE INTO data_sources (source_id, name, base_url, source_type, enab
 VALUES
     ('kitchener', 'City of Kitchener', 'https://services1.arcgis.com/qAo1OsXi67t7XgmS/arcgis/rest/services', 'arcgis_featureserver', 1),
     ('waterloo_region', 'Region of Waterloo', 'https://rowopendata-rmw.opendata.arcgis.com', 'arcgis_featureserver', 0),
-    ('waterloo_city', 'City of Waterloo', 'https://data.waterloo.ca', 'ckan', 0);
+    ('waterloo_city', 'City of Waterloo', 'https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services', 'arcgis_featureserver', 1);
 
 -- Insert default datasets
 INSERT OR IGNORE INTO datasets (dataset_id, source_id, service_name, display_name, service_url, local_table, fields, enabled)
@@ -138,4 +142,10 @@ VALUES
      'water_mains', '["WATMAINID","STATUS","PRESSUREZONE","PIPESIZE","MATERIAL","CRITICALITY","CONDITION_SCORE"]', 1),
     ('kitchener_bus_stops', 'kitchener', 'Bus_Stop', 'Bus Stops',
      'https://services1.arcgis.com/qAo1OsXi67t7XgmS/arcgis/rest/services/Bus_Stop/FeatureServer/0',
-     'bus_stops', '["STOP_ID","STREET","CROSSSTREET","MUNICIPALITY","IXPRESS","STATUS"]', 1);
+     'bus_stops', '["STOP_ID","STREET","CROSSSTREET","MUNICIPALITY","IXPRESS","STATUS"]', 1),
+    ('waterloo_building_permits', 'waterloo_city', 'City_of_Waterloo_Building_Permits', 'Building Permits (Waterloo)',
+     'https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services/City_of_Waterloo_Building_Permits/FeatureServer/0',
+     'building_permits', '["PERMIT_NUM","PERMITTYPE","STATUS","ISSUEDATE","CONTRVALUE","ADDRESS"]', 1),
+    ('waterloo_water_mains', 'waterloo_city', 'Water_Distribution_Mains', 'Water Mains (Waterloo)',
+     'https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services/Water_Distribution_Mains/FeatureServer/0',
+     'water_mains', '["ASSET_ID","LIFECYCLESTATUS","PRESSURE_ZONE","DIAMETER","MATERIAL"]', 1);

@@ -1,14 +1,14 @@
 {
-  "kitchener_building_permits": {
-    "dataset_id": "kitchener_building_permits",
+  "building_permits": {
+    "dataset_id": "building_permits",
     "department": "planning",
-    "name": "Building Permits \u2014 City of Kitchener",
-    "description": "All building permits issued by the City of Kitchener, sourced from the open ArcGIS portal. Includes permit type, status, construction value, work type, and applicant info.",
+    "name": "Building Permits",
+    "description": "All building permits issued by cities in the Region of Waterloo. Includes permit type, status, construction value, work type, and applicant info.",
     "sensitivity": "public",
     "fields": [
       "permit_no", "permit_type", "permit_status", "work_type", "sub_work_type",
       "application_date", "issue_date", "issue_year", "construction_value",
-      "permit_description", "folder_name"
+      "permit_description", "folder_name", "source_id"
     ],
     "pii_fields": [
       "owners", "applicant", "contractor", "contractor_contact",
@@ -16,50 +16,47 @@
     ],
     "allowed_roles": ["engineer", "planner", "health", "analyst", "admin"],
     "integration_key": "permit_type",
-    "filters": ["permit_type", "permit_status", "work_type", "issue_year"],
-    "tags": ["permits", "building", "planning", "kitchener", "construction", "development", "housing"],
-    "steward": "planning@kitchener.ca",
-    "source": "City of Kitchener Open Data (ArcGIS)",
+    "filters": ["permit_type", "permit_status", "work_type", "issue_year", "source_id"],
+    "tags": ["permits", "building", "planning", "construction", "development", "housing"],
+    "steward": "planning@regionofwaterloo.ca",
+    "sources": ["kitchener", "waterloo_city"],
     "last_updated": "2026-03-22",
-    "record_count": 74565,
     "retention_days": 3650,
     "refresh_interval_days": 7
   },
-  "kitchener_water_mains": {
-    "dataset_id": "kitchener_water_mains",
+  "water_mains": {
+    "dataset_id": "water_mains",
     "department": "engineering",
-    "name": "Water Mains \u2014 City of Kitchener",
+    "name": "Water Mains",
     "description": "Water main infrastructure including pipe size, material, pressure zone, and criticality rating. Used for infrastructure planning and condition assessment.",
     "sensitivity": "internal",
-    "fields": ["watmain_id", "status", "pressure_zone", "pipe_size", "material", "criticality"],
+    "fields": ["watmain_id", "status", "pressure_zone", "pipe_size", "material", "criticality", "source_id"],
     "pii_fields": [],
     "allowed_roles": ["engineer", "planner", "analyst", "admin"],
     "integration_key": "pressure_zone",
-    "filters": ["pressure_zone", "material", "status"],
-    "tags": ["infrastructure", "water", "mains", "engineering", "kitchener", "capacity"],
-    "steward": "engineering@kitchener.ca",
-    "source": "City of Kitchener Open Data (ArcGIS)",
+    "filters": ["pressure_zone", "material", "status", "source_id"],
+    "tags": ["infrastructure", "water", "mains", "engineering", "capacity"],
+    "steward": "engineering@regionofwaterloo.ca",
+    "sources": ["kitchener", "waterloo_city"],
     "last_updated": "2026-03-22",
-    "record_count": 16163,
     "retention_days": 3650,
     "refresh_interval_days": 30
   },
-  "kitchener_bus_stops": {
-    "dataset_id": "kitchener_bus_stops",
+  "bus_stops": {
+    "dataset_id": "bus_stops",
     "department": "transit",
-    "name": "Bus Stops \u2014 GRT / Kitchener",
+    "name": "Bus Stops — GRT",
     "description": "Grand River Transit bus stop locations with street, cross-street, municipality, and iXpress corridor status.",
     "sensitivity": "public",
-    "fields": ["stop_id", "street", "crossstreet", "municipality", "ixpress", "status"],
+    "fields": ["stop_id", "street", "crossstreet", "municipality", "ixpress", "status", "source_id"],
     "pii_fields": [],
     "allowed_roles": ["engineer", "planner", "health", "analyst", "admin"],
     "integration_key": "municipality",
     "filters": ["municipality", "status", "ixpress"],
-    "tags": ["transit", "bus", "stops", "grt", "kitchener", "waterloo", "cambridge", "ridership"],
+    "tags": ["transit", "bus", "stops", "grt", "ridership"],
     "steward": "grt@regionofwaterloo.ca",
-    "source": "City of Kitchener Open Data (ArcGIS)",
+    "sources": ["kitchener"],
     "last_updated": "2026-03-22",
-    "record_count": 1178,
     "retention_days": 1825,
     "refresh_interval_days": 14
   }

@@ -8,6 +8,34 @@ export async function getCatalog() {
   return res.json();
 }
 
+// Real open data replica endpoints
+export async function getReplicaStats() {
+  const res = await fetch(`${BASE}/replica/stats`);
+  if (!res.ok) throw new Error('Failed to fetch replica stats');
+  return res.json();
+}
+
+export async function getReplicaPermits(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/replica/permits?${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch permits');
+  return res.json();
+}
+
+export async function getReplicaWaterMains(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/replica/water-mains?${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch water mains');
+  return res.json();
+}
+
+export async function getReplicaBusStops(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/replica/bus-stops?${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch bus stops');
+  return res.json();
+}
+
 export async function getCatalogQuality() {
   const res = await fetch(`${BASE}/catalog/quality`);
   if (!res.ok) throw new Error('Failed to fetch catalog quality');

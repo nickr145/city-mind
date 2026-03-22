@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react';
-import { getCatalog, queryDepartment } from '../api/index.js';
+import { getCatalog, queryDepartment, getReplicaPermits, getReplicaWaterMains, getReplicaBusStops, getReplicaStats } from '../api/index.js';
 
 const ROLES = ['analyst', 'engineer', 'planner', 'health', 'admin'];
+const CITIES = [
+  { value: '', label: 'All Cities' },
+  { value: 'kitchener', label: 'Kitchener' },
+  { value: 'waterloo_city', label: 'Waterloo' },
+];
 
 const DEPT_META = {
   engineering: { label: 'Engineering', badge: 'badge-eng' },
   planning:    { label: 'Planning',    badge: 'badge-pln' },
   transit:     { label: 'Transit',     badge: 'badge-trt' },
+};
+
+const SOURCE_LABELS = {
+  kitchener: 'Kitchener',
+  waterloo_city: 'Waterloo',
 };
 
 // Filter options derived from real data
@@ -48,7 +58,7 @@ const FILTER_LABELS = {
 
 function ResultTable({ rows }) {
   const [page, setPage] = useState(0);
-  const pageSize = 25;
+  const pageSize = 50;
   if (!rows || rows.length === 0) return <div className="text-muted text-sm" style={{ padding: '0.75rem 0' }}>No records returned.</div>;
 
   const headers = Object.keys(rows[0]);
@@ -58,18 +68,22 @@ function ResultTable({ rows }) {
 
   return (
     <div>
-      <div className="table-wrap" style={{ marginTop: '0.75rem', maxHeight: 360, overflowY: 'auto' }}>
-        <table>
+      <div style={{ marginTop: '0.75rem', maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '4px' }}>
+        <table style={{ minWidth: 'max-content', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
           <thead>
-            <tr>{headers.map((h) => <th key={h} style={{ position: 'sticky', top: 0 }}>{h}</th>)}</tr>
+            <tr>
+              {headers.map((h) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#f8fafc', padding: '0.5rem 0.75rem', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
           </thead>
           <tbody>
             {paged.map((row, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 {headers.map((h) => (
-                  <td key={h} title={String(row[h] ?? '')}>
+                  <td key={h} title={String(row[h] ?? '')} style={{ padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}>
                     {row[h] !== null && row[h] !== undefined
-                      ? <span style={{ maxWidth: 200, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{String(row[h])}</span>
+                      ? String(row[h])
                       : <span className="text-muted">—</span>}
                   </td>
                 ))}
@@ -89,9 +103,19 @@ function ResultTable({ rows }) {
   );
 }
 
-function ResultCard({ dataset, result, loading, error, role, filters }) {
+function ResultCard({ dataset, result, loading, error, role, filters, cityFilter }) {
   const meta = DEPT_META[dataset.department] || { label: dataset.department, badge: '' };
   const access = result?.access_level;
+
+  // Get sources from the actual data rows
+  const sources = result?.rows?.length > 0
+    ? [...new Set(result.rows.map(r => r.source_id).filter(Boolean))]
+    : [];
+  const sourceLabel = sources.length === 1
+    ? SOURCE_LABELS[sources[0]] || sources[0]
+    : sources.length > 1
+      ? 'Multiple Cities'
+      : cityFilter ? SOURCE_LABELS[cityFilter] : 'All Cities';
 
   const filterStr = Object.entries(filters || {}).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('&');
   const downloadUrl = `/download/${dataset.department}?role=${role}${filterStr ? '&' + filterStr : ''}`;
@@ -103,7 +127,14 @@ function ResultCard({ dataset, result, loading, error, role, filters }) {
           <span className={`badge ${meta.badge}`}>{meta.label}</span>
           <span style={{ fontWeight: 700 }}>{dataset.name}</span>
         </div>
-        {access && <span className={`badge badge-${access}`}>{access}</span>}
+        <div style={{ display: 'flex', gap: '0.35rem' }}>
+          {sources.length > 0 && sources.map(s => (
+            <span key={s} className={`badge ${s === 'kitchener' ? 'badge-kitchener' : 'badge-waterloo'}`} style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}>
+              {SOURCE_LABELS[s] || s}
+            </span>
+          ))}
+          {access && <span className={`badge badge-${access}`}>{access}</span>}
+        </div>
       </div>
 
       {loading && <div className="text-muted text-sm">Querying…</div>}
@@ -136,14 +167,17 @@ export default function Explorer() {
   const [catalog, setCatalog] = useState(null);
   const [role, setRole] = useState('analyst');
   const [deptFilter, setDeptFilter] = useState('all');
+  const [cityFilter, setCityFilter] = useState('');
   const [filters, setFilters] = useState({});
   const [limit, setLimit] = useState(200);
   const [results, setResults] = useState({});
   const [loadingMap, setLoadingMap] = useState({});
   const [errorMap, setErrorMap] = useState({});
   const [queried, setQueried] = useState(false);
+  const [replicaStats, setReplicaStats] = useState(null);
 
   useEffect(() => { getCatalog().then(setCatalog).catch(console.error); }, []);
+  useEffect(() => { getReplicaStats().then(setReplicaStats).catch(console.error); }, []);
 
   const datasets = (catalog?.datasets ?? []).filter(d => d.department in DEPT_META);
   const visible = deptFilter === 'all' ? datasets : datasets.filter(d => d.department === deptFilter);
@@ -164,7 +198,12 @@ export default function Explorer() {
 
     await Promise.all(visible.map(async (ds) => {
       try {
-        const result = await queryDepartment({ department: ds.department, role, filters, limit });
+        // Add source_id (city filter) to the filters
+        const queryFilters = { ...filters };
+        if (cityFilter) {
+          queryFilters.source_id = cityFilter;
+        }
+        const result = await queryDepartment({ department: ds.department, role, filters: queryFilters, limit });
         setResults(prev => ({ ...prev, [ds.dataset_id]: result }));
       } catch (e) {
         setErrorMap(prev => ({ ...prev, [ds.dataset_id]: e.message }));
@@ -198,9 +237,15 @@ export default function Explorer() {
             </select>
           </div>
           <div>
+            <div className="stat-label" style={{ marginBottom: '0.3rem' }}>City</div>
+            <select className="select" value={cityFilter} onChange={e => setCityFilter(e.target.value)}>
+              {CITIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <div>
             <div className="stat-label" style={{ marginBottom: '0.3rem' }}>Row Limit</div>
             <select className="select" value={limit} onChange={e => setLimit(Number(e.target.value))}>
-              {[50, 100, 200, 500, 1000].map(l => <option key={l} value={l}>{l} rows</option>)}
+              {[50, 100, 200, 500, 1000, 2000, 5000].map(l => <option key={l} value={l}>{l} rows</option>)}
             </select>
           </div>
         </div>
@@ -245,6 +290,7 @@ export default function Explorer() {
         <div>
           <div className="section-title mb-sm">
             Results — role: <strong>{role}</strong>
+            {cityFilter && <span style={{ marginLeft: '0.5rem' }}> · City: <strong>{SOURCE_LABELS[cityFilter]}</strong></span>}
             {Object.entries(filters).filter(([,v]) => v).map(([k, v]) => (
               <span key={k} style={{ marginLeft: '0.5rem' }}> · {FILTER_LABELS[k] || k}: <strong>{v}</strong></span>
             ))}
@@ -259,6 +305,7 @@ export default function Explorer() {
                 error={errorMap[ds.dataset_id]}
                 role={role}
                 filters={filters}
+                cityFilter={cityFilter}
               />
             ))}
           </div>
@@ -268,8 +315,18 @@ export default function Explorer() {
       {!queried && (
         <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
           <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🗂️</div>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>74,565 permits · 16,163 water mains · 1,178 bus stops</div>
-          <div className="text-sm">Real open data from City of Kitchener ArcGIS. Select parameters and run a query.</div>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+            {replicaStats?.tables
+              ? `${replicaStats.tables.building_permits?.toLocaleString() || 0} permits · ${replicaStats.tables.water_mains?.toLocaleString() || 0} water mains · ${replicaStats.tables.bus_stops?.toLocaleString() || 0} bus stops`
+              : 'Loading stats...'}
+          </div>
+          <div className="text-sm" style={{ marginBottom: '0.5rem' }}>Real open data from City of Kitchener and City of Waterloo. Select parameters and run a query.</div>
+          {replicaStats?.by_source && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginTop: '0.75rem', fontSize: '0.75rem' }}>
+              <span><strong>Kitchener:</strong> {(replicaStats.by_source.building_permits?.kitchener || 0).toLocaleString()} permits, {(replicaStats.by_source.water_mains?.kitchener || 0).toLocaleString()} mains</span>
+              <span><strong>Waterloo:</strong> {(replicaStats.by_source.building_permits?.waterloo_city || 0).toLocaleString()} permits, {(replicaStats.by_source.water_mains?.waterloo_city || 0).toLocaleString()} mains</span>
+            </div>
+          )}
         </div>
       )}
     </div>

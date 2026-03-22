@@ -51,9 +51,9 @@ DATA_SOURCES = {
     "waterloo_city": DataSourceConfig(
         source_id="waterloo_city",
         name="City of Waterloo",
-        base_url="https://data.waterloo.ca",
-        source_type="ckan",
-        enabled=False,  # Phase 2
+        base_url="https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services",
+        source_type="arcgis_featureserver",
+        enabled=True,
     ),
 }
 
@@ -146,6 +146,47 @@ DATASETS = {
             "MUNICIPALITY": "municipality",
             "IXPRESS": "ixpress",
             "STATUS": "status",
+        },
+    ),
+    # City of Waterloo datasets
+    "waterloo_building_permits": DatasetConfig(
+        dataset_id="waterloo_building_permits",
+        source_id="waterloo_city",
+        service_name="City_of_Waterloo_Building_Permits",
+        display_name="Building Permits (Waterloo)",
+        service_url="https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services/City_of_Waterloo_Building_Permits/FeatureServer/0",
+        local_table="building_permits",
+        primary_key="PERMIT_NUM",
+        field_mapping={
+            "PERMIT_NUM": "permit_no",
+            "PERMIT_ID": "folder_rsn",
+            "PERMITTYPE": "permit_type",
+            "STATUS": "permit_status",
+            "ISSUEDATE": "issue_date",
+            "ISSUE_YEAR": "issue_year",
+            "CONTRVALUE": "construction_value",
+            "WORKCODE": "work_code",
+            "WORKDESC": "work_type",
+            "SUBDESC": "sub_work_type",
+            "PERMITDESC": "permit_description",
+            "ADDRESS": "folder_name",
+            "UNITS": "total_units",
+        },
+    ),
+    "waterloo_water_mains": DatasetConfig(
+        dataset_id="waterloo_water_mains",
+        source_id="waterloo_city",
+        service_name="Water_Distribution_Mains",
+        display_name="Water Mains (Waterloo)",
+        service_url="https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services/Water_Distribution_Mains/FeatureServer/0",
+        local_table="water_mains",
+        primary_key="ASSET_ID",
+        field_mapping={
+            "ASSET_ID": "watmain_id",
+            "LIFECYCLESTATUS": "status",
+            "PRESSURE_ZONE": "pressure_zone",
+            "DIAMETER": "pipe_size",
+            "MATERIAL": "material",
         },
     ),
 }

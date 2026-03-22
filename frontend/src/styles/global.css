@@ -261,6 +261,9 @@ body {
 .badge-stale { background: #fffbeb; color: #92400e; }
 .badge-fresh { background: #f0fdf4; color: #166534; }
 
+.badge-kitchener { background: #dbeafe; color: #1d4ed8; }
+.badge-waterloo { background: #fce7f3; color: #be185d; }
+
 /* ── Tables ──────────────────────────────── */
 .table-wrap {
   overflow-x: auto;

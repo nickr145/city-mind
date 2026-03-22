@@ -42,9 +42,9 @@ DB_MAP = {
 
 # Whitelisted filter fields per department (prevents SQL injection)
 ALLOWED_FILTERS = {
-    "planning":    {"permit_type", "permit_status", "work_type", "issue_year", "sub_work_type"},
-    "engineering": {"pressure_zone", "material", "status"},
-    "transit":     {"municipality", "status", "ixpress"},
+    "planning":    {"permit_type", "permit_status", "work_type", "issue_year", "sub_work_type", "source_id"},
+    "engineering": {"pressure_zone", "material", "status", "source_id"},
+    "transit":     {"municipality", "status", "ixpress", "source_id"},
 }
 
 # Date field used for as_of filtering per department
@@ -602,9 +602,16 @@ def _get_replica_conn():
 
 
 @app.get("/replica/permits", deprecated=True)
-def get_replica_permits(permit_no: str = None, permit_type: str = None,
-                        status: str = None, min_value: float = None,
-                        issued_by: str = None, issue_year: int = None, limit: int = 100):
+def get_replica_permits(
+    permit_no: str = None,
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    issued_by: str = None,
+    issue_year: int = None,
+    source_id: str = None,
+    limit: int = 100,
+):
     """[Deprecated] Use POST /query with department=planning instead."""
     conn = _get_replica_conn()
     clauses, params = [], []
@@ -619,13 +626,29 @@ def get_replica_permits(permit_no: str = None, permit_type: str = None,
     if issued_by:
         clauses.append("issued_by LIKE ?"); params.append(f"%{issued_by}%")
     if issue_year:
-        clauses.append("issue_year = ?"); params.append(float(issue_year))
+        clauses.append("issue_year = ?")
+        params.append(float(issue_year))
+    if source_id:
+        clauses.append("source_id = ?")
+        params.append(source_id)
+
     where = " AND ".join(clauses) if clauses else "1=1"
     rows = conn.execute(f"SELECT * FROM building_permits WHERE {where} LIMIT ?",
                         params + [limit]).fetchall()
     conn.close()
-    return {"source": "Local Replica", "record_count": len(rows),
-            "features": [dict(r) for r in rows]}
+
+    # Determine source label
+    sources = set(row["source_id"] for row in rows) if rows else set()
+    if len(sources) == 1:
+        source_label = "City of Kitchener" if "kitchener" in sources else "City of Waterloo"
+    else:
+        source_label = "Multiple Sources (Kitchener + Waterloo)"
+
+    return {
+        "source": f"Local Replica ({source_label})",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
 
 
 @app.get("/replica/permits/download", deprecated=True)
@@ -675,8 +698,14 @@ def get_replica_permit_by_id(permit_no: str):
 
 
 @app.get("/replica/water-mains", deprecated=True)
-def get_replica_water_mains(pressure_zone: str = None, material: str = None,
-                            min_criticality: int = None, status: str = None, limit: int = 100):
+def get_replica_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    status: str = None,
+    source_id: str = None,
+    limit: int = 100,
+):
     """[Deprecated] Use POST /query with department=engineering instead."""
     conn = _get_replica_conn()
     clauses, params = [], []
@@ -687,13 +716,29 @@ def get_replica_water_mains(pressure_zone: str = None, material: str = None,
     if min_criticality:
         clauses.append("criticality >= ?"); params.append(min_criticality)
     if status:
-        clauses.append("status = ?"); params.append(status)
+        clauses.append("status = ?")
+        params.append(status)
+    if source_id:
+        clauses.append("source_id = ?")
+        params.append(source_id)
+
     where = " AND ".join(clauses) if clauses else "1=1"
     rows = conn.execute(f"SELECT * FROM water_mains WHERE {where} LIMIT ?",
                         params + [limit]).fetchall()
     conn.close()
-    return {"source": "Local Replica", "record_count": len(rows),
-            "features": [dict(r) for r in rows]}
+
+    # Determine source label
+    sources = set(row["source_id"] for row in rows) if rows else set()
+    if len(sources) == 1:
+        source_label = "City of Kitchener" if "kitchener" in sources else "City of Waterloo"
+    else:
+        source_label = "Multiple Sources (Kitchener + Waterloo)"
+
+    return {
+        "source": f"Local Replica ({source_label})",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
 
 
 @app.get("/replica/water-mains/download", deprecated=True)
@@ -773,16 +818,32 @@ def get_replica_stats():
     """[Deprecated] Use GET /sync/status instead."""
     conn = _get_replica_conn()
     stats = {}
+    by_source = {}
     for table in ["building_permits", "water_mains", "bus_stops"]:
         try:
-            stats[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            stats[table] = count
+            # Get breakdown by source
+            source_counts = conn.execute(
+                f"SELECT source_id, COUNT(*) as cnt FROM {table} GROUP BY source_id"
+            ).fetchall()
+            by_source[table] = {row[0]: row[1] for row in source_counts}
         except Exception:
             stats[table] = 0
+            by_source[table] = {}
+
+    # Get last sync time
     last_sync = conn.execute(
         "SELECT MAX(completed_at) FROM sync_runs WHERE status = 'completed'"
     ).fetchone()[0]
     conn.close()
-    return {"tables": stats, "total_records": sum(stats.values()), "last_sync": last_sync}
+
+    return {
+        "tables": stats,
+        "by_source": by_source,
+        "total_records": sum(stats.values()),
+        "last_sync": last_sync,
+    }
 
 
 # ---------------------------------------------------------------------------

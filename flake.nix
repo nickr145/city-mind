@@ -6,8 +6,14 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         python = pkgs.python313;
@@ -21,10 +27,14 @@
             pythonPackages.virtualenv
 
             # System dependencies that may be needed
+            pkgs.nodejs
+            pkgs.nodePackages.npm
             pkgs.gcc
             pkgs.openssl
             pkgs.zlib
           ];
+
+          nativeBuildInputs = [ pkgs.fish ];
 
           shellHook = ''
             # Create venv if it doesn't exist
@@ -33,7 +43,7 @@
               python -m venv venv
             fi
 
-            # Activate venv
+            # Activate venv (bash)
             source venv/bin/activate
 
             # Install dependencies if requirements.txt exists
@@ -45,6 +55,8 @@
             echo "Run 'cd backend && python seed.py' to seed databases"
             echo "Run 'cd backend && uvicorn main:app --reload' to start the API"
             echo "Run 'python fallback_demo.py' to run the demo"
+            echo ""
+            echo "For Fish shell: run 'source venv/bin/activate.fish'"
           '';
 
           # Environment variables
