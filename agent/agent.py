@@ -56,7 +56,7 @@ query across departmental data silos while respecting privacy and governance rul
   high health vulnerability, active infill permits, high transit ridership)
 """
 
-model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0)
+model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0, streaming=False)
 
 graph = create_deep_agent(
     model=model,
