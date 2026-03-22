@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 
 
-def _conn():
+def _conn() -> sqlite3.Connection:
     c = sqlite3.connect("db/audit.db")
     c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
         query_id TEXT PRIMARY KEY,
@@ -19,7 +19,7 @@ def _conn():
     return c
 
 
-def log_query(entry: dict):
+def log_query(entry: dict) -> None:
     c = _conn()
     c.execute(
         "INSERT INTO audit_log VALUES (?,?,?,?,?,?,?,?)",

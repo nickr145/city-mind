@@ -4,7 +4,7 @@ import os
 from deepagents import create_deep_agent
 from langchain_anthropic import ChatAnthropic
 
-from agent.tools import catalog_tool, query_tool, audit_tool, download_tool
+from agent.tools import catalog_tool, query_tool, audit_tool, download_tool, health_check_tool
 
 SYSTEM_PROMPT = """
 You are CityMind, the AI query interface for the Region of Waterloo's federated
@@ -45,6 +45,16 @@ query across departmental data silos while respecting privacy and governance rul
 - The zone_id format is WR-ZONE-XXX (e.g. WR-ZONE-042). Use it for spatial queries.
 - Always show the access_level from each query result — it demonstrates RBAC is working.
 - Always be transparent about what privacy controls were applied and why.
+- If a tool call fails or returns an unexpected error, call health_check_tool to confirm
+  the backend is reachable before retrying.
+
+## Role handling
+- Valid roles: engineer, planner, health, analyst, admin.
+- If no role is stated or cannot be determined from context, default to role="analyst"
+  and inform the user: "No role was specified — defaulting to 'analyst'. If you have a
+  different role (engineer, planner, health, admin), please restate your question with
+  your role for appropriate access."
+- If an unrecognised role is mentioned, default to role="analyst" and inform the user.
 
 ## Zone Reference
 - WR-ZONE-001: Uptown Waterloo (King St corridor)
@@ -60,6 +70,6 @@ model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0, streaming
 
 graph = create_deep_agent(
     model=model,
-    tools=[catalog_tool, query_tool, download_tool, audit_tool],
+    tools=[catalog_tool, query_tool, download_tool, audit_tool, health_check_tool],
     system_prompt=SYSTEM_PROMPT,
 )

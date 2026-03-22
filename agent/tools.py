@@ -1,9 +1,49 @@
 # agent/tools.py
 import os
+import time
+
 import requests
 from langchain.tools import tool
 
 BASE = os.getenv("FASTAPI_URL", "http://localhost:8000")
+
+
+def _post(url: str, **kwargs) -> requests.Response:
+    """POST with up to 3 attempts on connection failure (exponential backoff)."""
+    for attempt in range(3):
+        try:
+            return requests.post(url, **kwargs)
+        except requests.RequestException:
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (2 ** attempt))
+
+
+def _get(url: str, **kwargs) -> requests.Response:
+    """GET with up to 3 attempts on connection failure (exponential backoff)."""
+    for attempt in range(3):
+        try:
+            return requests.get(url, **kwargs)
+        except requests.RequestException:
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (2 ** attempt))
+
+
+@tool
+def health_check_tool() -> str:
+    """Check whether the CityMind FastAPI backend is reachable.
+    Call this if previous tool calls have failed or returned unexpected errors,
+    to confirm the backend server is running on localhost:8000."""
+    try:
+        resp = requests.get(f"{BASE}/health", timeout=5)
+        data = resp.json()
+        return f"Backend {data.get('status', 'unknown')} — {data.get('service', 'CityMind Data Gateway')}"
+    except Exception as e:
+        return (
+            f"Backend unreachable: {e}. "
+            "Ensure the FastAPI server is running: cd backend && uvicorn main:app --reload"
+        )
 
 
 @tool
@@ -13,7 +53,7 @@ def catalog_tool(query: str) -> str:
     describe the data. Use this FIRST before any federated query.
     Input: a plain-text description of what data you are looking for."""
     tags = query.lower().split()[:4]  # simple keyword extraction
-    resp = requests.post(f"{BASE}/catalog/search", json={"tags": tags}, timeout=10)
+    resp = _post(f"{BASE}/catalog/search", json={"tags": tags}, timeout=10)
     data = resp.json()
     if not data["results"]:
         return f"No datasets found matching: {query}. Try broader terms."
@@ -41,7 +81,7 @@ def query_tool(department: str, role: str, zone_id: str = "") -> str:
     payload = {"department": department, "role": role}
     if zone_id:
         payload["zone_id"] = zone_id
-    resp = requests.post(f"{BASE}/query", json=payload, timeout=10)
+    resp = _post(f"{BASE}/query", json=payload, timeout=10)
     result = resp.json()
     access = result.get("access_level", "unknown")
     rows = result.get("rows", [])
@@ -81,7 +121,11 @@ def download_tool(department: str, role: str, zone_id: str = "", fmt: str = "csv
 
     # Verify the endpoint is reachable and check access level
     try:
-        resp = requests.post(f"{base}/query", json={"department": department, "role": role, **({"zone_id": zone_id} if zone_id else {})}, timeout=10)
+        resp = _post(
+            f"{base}/query",
+            json={"department": department, "role": role, **({"zone_id": zone_id} if zone_id else {})},
+            timeout=10,
+        )
         result = resp.json()
         access = result.get("access_level", "unknown")
         count = len(result.get("rows", []))
@@ -106,7 +150,7 @@ def audit_tool(limit: int = 10) -> str:
     """Retrieve the governance audit log showing recent data access history.
     Use this to demonstrate data governance — who accessed what, with what role,
     and what privacy level was applied. Call this at the end of each analysis."""
-    resp = requests.get(f"{BASE}/audit?limit={limit}", timeout=10)
+    resp = _get(f"{BASE}/audit?limit={limit}", timeout=10)
     log = resp.json().get("log", [])
     if not log:
         return "Audit log is empty."

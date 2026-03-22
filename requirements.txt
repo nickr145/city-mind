@@ -7,3 +7,6 @@ fastapi
 uvicorn
 python-dotenv
 requests
+pytest
+httpx
+ruff

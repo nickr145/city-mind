@@ -33,12 +33,12 @@ DB_MAP = {
 # ---------------------------------------------------------------------------
 
 @app.get("/catalog")
-def list_catalog():
+def list_catalog() -> dict:
     return {"datasets": list(CATALOG.values()), "count": len(CATALOG)}
 
 
 @app.get("/catalog/quality")
-def catalog_quality():
+def catalog_quality() -> dict:
     """Flag datasets that are stale (not updated in 90+ days)."""
     from datetime import datetime, timedelta
     threshold = datetime.now() - timedelta(days=90)
@@ -54,7 +54,7 @@ def catalog_quality():
 
 
 @app.get("/catalog/dictionary")
-def catalog_dictionary():
+def catalog_dictionary() -> dict:
     """Return shared field definitions (data dictionary)."""
     return {
         "shared_fields": {
@@ -69,14 +69,14 @@ def catalog_dictionary():
 
 
 @app.get("/catalog/{dataset_id}")
-def get_dataset(dataset_id: str):
+def get_dataset(dataset_id: str) -> dict:
     if dataset_id not in CATALOG:
         raise HTTPException(404, "Dataset not found")
     return CATALOG[dataset_id]
 
 
 @app.post("/catalog/search")
-def search_catalog(body: dict):
+def search_catalog(body: dict) -> dict:
     tags = body.get("tags", [])
     dept = body.get("department")
     results = [
@@ -92,7 +92,7 @@ def search_catalog(body: dict):
 # ---------------------------------------------------------------------------
 
 @app.post("/query")
-def federated_query(body: dict):
+def federated_query(body: dict) -> dict:
     role = body.get("role", "analyst")
     department = body.get("department")
     zone_filter = body.get("zone_id")
@@ -134,7 +134,7 @@ def federated_query(body: dict):
 # ---------------------------------------------------------------------------
 
 @app.get("/audit")
-def get_audit(limit: int = 20):
+def get_audit(limit: int = 20) -> dict:
     c = _conn()
     rows = c.execute(
         "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?", (limit,)
@@ -151,7 +151,7 @@ def get_audit(limit: int = 20):
 # Download endpoint — RBAC-filtered CSV or JSON
 # ---------------------------------------------------------------------------
 
-def _fetch_rbac_rows(department: str, role: str, zone_id: str):
+def _fetch_rbac_rows(department: str, role: str, zone_id: str) -> dict:
     """Shared helper: fetch and privacy-filter rows for a department."""
     if department not in DB_MAP:
         raise HTTPException(400, f"Unknown department: {department}. Valid: {list(DB_MAP.keys())}")
@@ -209,7 +209,7 @@ def download_data(department: str, role: str = "analyst", zone_id: str = "", fmt
 # ---------------------------------------------------------------------------
 
 @app.get("/view/{department}", response_class=HTMLResponse)
-def view_data(department: str, role: str = "analyst", zone_id: str = ""):
+def view_data(department: str, role: str = "analyst", zone_id: str = "") -> HTMLResponse:
     """Return an HTML table of RBAC-filtered department data, viewable in a browser."""
     result = _fetch_rbac_rows(department, role, zone_id)
     access = result["access_level"]
@@ -307,5 +307,5 @@ def view_data(department: str, role: str = "analyst", zone_id: str = ""):
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-def health_check():
+def health_check() -> dict:
     return {"status": "ok", "service": "CityMind Data Gateway"}

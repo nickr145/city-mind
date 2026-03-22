@@ -35,6 +35,8 @@ ROLE_ACCESS = {
 }
 
 STRIP_ALWAYS = ["record_id"]  # never return internal IDs
+# NOTE: SDD §5 specifies record_id should be returned for admin role.
+# Currently stripped for all roles via STRIP_ALWAYS — tracked as a known gap.
 
 CAPACITY_BANDS = {
     "engineering": {
@@ -48,7 +50,7 @@ CAPACITY_BANDS = {
 }
 
 
-def apply_privacy(rows: list, dept: str, role: str) -> dict:
+def apply_privacy(rows: list[dict], dept: str, role: str) -> dict:
     access = ROLE_ACCESS.get(role, {}).get(dept, "none")
 
     if access == "none":
