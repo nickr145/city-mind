@@ -418,6 +418,189 @@ def get_infrastructure_summary(zone: str = None):
 
 
 # ---------------------------------------------------------------------------
+# Local Replica endpoints (query aggregated data from SQLite)
+# ---------------------------------------------------------------------------
+
+from pathlib import Path
+
+REPLICA_DB = Path(__file__).parent / "db" / "opendata_replica.db"
+
+
+def _get_replica_conn():
+    """Get a connection to the replica database."""
+    conn = sqlite3.connect(str(REPLICA_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.get("/replica/permits")
+def get_replica_permits(
+    permit_no: str = None,
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    issued_by: str = None,
+    issue_year: int = None,
+    limit: int = 100,
+):
+    """Query building permits from local replica (all 46 fields available)."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if permit_no:
+        clauses.append("permit_no = ?")
+        params.append(permit_no)
+    if permit_type:
+        clauses.append("permit_type LIKE ?")
+        params.append(f"%{permit_type}%")
+    if status:
+        clauses.append("permit_status LIKE ?")
+        params.append(f"%{status}%")
+    if min_value:
+        clauses.append("construction_value >= ?")
+        params.append(min_value)
+    if issued_by:
+        clauses.append("issued_by LIKE ?")
+        params.append(f"%{issued_by}%")
+    if issue_year:
+        clauses.append("issue_year = ?")
+        params.append(float(issue_year))
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM building_permits WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/permits/{permit_no}")
+def get_replica_permit_by_id(permit_no: str):
+    """Get a single building permit by permit number from local replica."""
+    conn = _get_replica_conn()
+    row = conn.execute(
+        "SELECT * FROM building_permits WHERE permit_no = ?", (permit_no,)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(404, f"Permit {permit_no} not found")
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "permit": dict(row),
+    }
+
+
+@app.get("/replica/water-mains")
+def get_replica_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    status: str = None,
+    limit: int = 100,
+):
+    """Query water mains from local replica."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if pressure_zone:
+        clauses.append("pressure_zone LIKE ?")
+        params.append(f"%{pressure_zone}%")
+    if material:
+        clauses.append("material = ?")
+        params.append(material)
+    if min_criticality:
+        clauses.append("criticality >= ?")
+        params.append(min_criticality)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM water_mains WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/bus-stops")
+def get_replica_bus_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    limit: int = 100,
+):
+    """Query bus stops from local replica."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if municipality:
+        clauses.append("municipality = ?")
+        params.append(municipality)
+    if ixpress_only:
+        clauses.append("ixpress = 'Y'")
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM bus_stops WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (GRT / Region of Waterloo)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/stats")
+def get_replica_stats():
+    """Get statistics about the local replica database."""
+    conn = _get_replica_conn()
+
+    stats = {}
+    for table in ["building_permits", "water_mains", "bus_stops"]:
+        try:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            stats[table] = count
+        except Exception:
+            stats[table] = 0
+
+    # Get last sync time
+    last_sync = conn.execute(
+        "SELECT MAX(completed_at) FROM sync_runs WHERE status = 'completed'"
+    ).fetchone()[0]
+
+    conn.close()
+
+    return {
+        "tables": stats,
+        "total_records": sum(stats.values()),
+        "last_sync": last_sync,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 

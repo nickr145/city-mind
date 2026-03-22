@@ -6,8 +6,8 @@ from langchain_anthropic import ChatAnthropic
 
 from agent.tools import (
     catalog_tool, query_tool, audit_tool, download_tool,
-    opendata_catalog, query_building_permits, query_water_infrastructure,
-    query_transit_stops, infrastructure_summary,
+    opendata_catalog, query_building_permits, lookup_permit,
+    query_water_infrastructure, query_transit_stops, infrastructure_summary,
 )
 
 SYSTEM_PROMPT = """
@@ -22,12 +22,17 @@ You have access to TWO data systems:
 ## Workflow — follow this for every question:
 
 ### For Real Infrastructure Data (PREFERRED):
-Use the open data tools to query REAL municipal data:
+Use the open data tools to query REAL municipal data from the local replica:
 - opendata_catalog: List all available real datasets
-- query_building_permits: Real building permits from City of Kitchener
+- lookup_permit: Look up a specific permit by number (returns ALL 46 fields)
+- query_building_permits: Search permits with filters (type, status, issued_by, year)
 - query_water_infrastructure: Real water main data (pipe size, material, criticality)
 - query_transit_stops: Real GRT bus stop locations
 - infrastructure_summary: Cross-dataset summary combining all sources
+
+IMPORTANT: The local replica has ALL permit fields including issued_by, contractor,
+permit_fee, work_type, legal_description, etc. Always use lookup_permit or
+query_building_permits to get complete permit information.
 
 ### For Simulated Department Data (with RBAC):
 1. DISCOVER: Call catalog_tool to find which datasets are relevant.
@@ -80,9 +85,9 @@ graph = create_deep_agent(
     tools=[
         # Simulated data with RBAC
         catalog_tool, query_tool, download_tool, audit_tool,
-        # Real open data from ArcGIS
-        opendata_catalog, query_building_permits, query_water_infrastructure,
-        query_transit_stops, infrastructure_summary,
+        # Real open data from local replica
+        opendata_catalog, lookup_permit, query_building_permits,
+        query_water_infrastructure, query_transit_stops, infrastructure_summary,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

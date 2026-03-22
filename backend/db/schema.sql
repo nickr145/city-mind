@@ -34,16 +34,52 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     triggered_by TEXT  -- 'manual' | 'cron'
 );
 
--- Building permits from City of Kitchener
+-- Building permits from City of Kitchener (full dataset)
 CREATE TABLE IF NOT EXISTS building_permits (
     permit_no TEXT PRIMARY KEY,
+    parcel_id REAL,
+    folder_rsn INTEGER,
     permit_type TEXT,
+    permit_type_code TEXT,
+    roll_no TEXT,
+    folder_name TEXT,
+    legal_description TEXT,
     permit_status TEXT,
+    status_code TEXT,
     application_date TEXT,
     issue_date TEXT,
+    final_date TEXT,
+    expiry_date TEXT,
+    issue_year REAL,
+    issued_by TEXT,
+    sub_work_type TEXT,
+    work_type TEXT,
+    work_code INTEGER,
+    permit_description TEXT,
     construction_value REAL,
+    total_units TEXT,
+    units_created TEXT,
+    units_lost TEXT,
+    units_net_change REAL,
+    rear_yard_rqrd TEXT,
+    left_side_yard_rqrd TEXT,
+    right_side_yard_rqrd TEXT,
+    special_conditions TEXT,
     owners TEXT,
     applicant TEXT,
+    contractor TEXT,
+    contractor_contact TEXT,
+    extraction_date TEXT,
+    permit_fee REAL,
+    statcan_gross_area_m2 TEXT,
+    existing_gfa_m2 TEXT,
+    proposed_gfa TEXT,
+    total_gfa_m2 TEXT,
+    occupancy_permitted_date TEXT,
+    rowhouse_units_created TEXT,
+    storeys_proposed TEXT,
+    gfa_groupc_constr_sqft TEXT,
+    new_floor_area_sqft TEXT,
     source_id TEXT DEFAULT 'kitchener',
     synced_at TEXT
 );
@@ -75,6 +111,9 @@ CREATE TABLE IF NOT EXISTS bus_stops (
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_building_permits_type ON building_permits(permit_type);
 CREATE INDEX IF NOT EXISTS idx_building_permits_status ON building_permits(permit_status);
+CREATE INDEX IF NOT EXISTS idx_building_permits_issue_year ON building_permits(issue_year);
+CREATE INDEX IF NOT EXISTS idx_building_permits_work_type ON building_permits(work_type);
+CREATE INDEX IF NOT EXISTS idx_building_permits_application_date ON building_permits(application_date);
 CREATE INDEX IF NOT EXISTS idx_water_mains_pressure_zone ON water_mains(pressure_zone);
 CREATE INDEX IF NOT EXISTS idx_water_mains_material ON water_mains(material);
 CREATE INDEX IF NOT EXISTS idx_bus_stops_municipality ON bus_stops(municipality);

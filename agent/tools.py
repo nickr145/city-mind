@@ -146,41 +146,132 @@ def opendata_catalog() -> str:
 
 @tool
 def query_building_permits(
+    permit_no: str = "",
     permit_type: str = "",
     status: str = "",
     min_value: float = 0,
+    issued_by: str = "",
+    issue_year: int = 0,
     limit: int = 20
 ) -> str:
-    """Query real building permits from City of Kitchener open data.
+    """Query building permits from the local replica database (City of Kitchener).
+    This queries the aggregated local database which has ALL 46 fields including
+    issued_by, contractor, permit_fee, work_type, etc.
 
     Parameters:
+      permit_no: Exact permit number to look up (e.g., '99100011')
       permit_type: Filter by type (e.g., 'Residential', 'Commercial', 'Alteration')
       status: Filter by status (e.g., 'Issued', 'Closed', 'In Review')
       min_value: Minimum construction value in dollars
+      issued_by: Filter by issuing officer name
+      issue_year: Filter by year issued (e.g., 2024)
       limit: Max records to return (default 20)
 
-    Returns actual permit data including permit number, type, status, and value."""
+    Returns permit data including ALL fields: permit_no, permit_type, permit_status,
+    issued_by, construction_value, contractor, applicant, work_type, and more."""
     params = {"limit": limit}
+    if permit_no:
+        params["permit_no"] = permit_no
     if permit_type:
         params["permit_type"] = permit_type
     if status:
         params["status"] = status
     if min_value > 0:
         params["min_value"] = min_value
+    if issued_by:
+        params["issued_by"] = issued_by
+    if issue_year > 0:
+        params["issue_year"] = issue_year
 
-    resp = requests.get(f"{BASE}/opendata/permits", params=params, timeout=30)
+    resp = requests.get(f"{BASE}/replica/permits", params=params, timeout=30)
     data = resp.json()
+
+    if data["record_count"] == 0:
+        return "No permits found matching the criteria."
 
     lines = [f"Building Permits from {data['source']} ({data['record_count']} records):"]
     for p in data["features"][:10]:
-        value = p.get("CONSTRUCTION_VALUE")
+        value = p.get("construction_value")
         value_str = f"${value:,.0f}" if value else "N/A"
+        issued_by_str = p.get("issued_by") or "N/A"
         lines.append(
-            f"  - {p.get('PERMITNO')}: {p.get('PERMIT_TYPE')}"
-            f"\n    Status: {p.get('PERMIT_STATUS')} | Value: {value_str}"
+            f"  - Permit {p.get('permit_no')}: {p.get('permit_type')}"
+            f"\n    Status: {p.get('permit_status')} | Value: {value_str}"
+            f"\n    Issued by: {issued_by_str} | Year: {p.get('issue_year')}"
+            f"\n    Applicant: {p.get('applicant') or 'N/A'}"
+            f"\n    Contractor: {p.get('contractor') or 'N/A'}"
+            f"\n    Work Type: {p.get('work_type') or 'N/A'}"
         )
     if data["record_count"] > 10:
         lines.append(f"  ... and {data['record_count'] - 10} more permits")
+    return "\n".join(lines)
+
+
+@tool
+def lookup_permit(permit_no: str) -> str:
+    """Look up a specific building permit by its permit number.
+    Returns ALL available fields for that permit including issued_by,
+    contractor, applicant, construction_value, work_type, etc.
+
+    Parameters:
+      permit_no: The permit number to look up (e.g., '99100011')
+
+    Returns complete permit details with all 46 fields."""
+    resp = requests.get(f"{BASE}/replica/permits/{permit_no}", timeout=30)
+
+    if resp.status_code == 404:
+        return f"Permit {permit_no} not found in the database."
+
+    data = resp.json()
+    p = data["permit"]
+
+    lines = [f"=== Permit {permit_no} Details ==="]
+    lines.append(f"Source: {data['source']}")
+    lines.append("")
+
+    # Core info
+    lines.append(f"Type: {p.get('permit_type') or 'N/A'}")
+    lines.append(f"Status: {p.get('permit_status') or 'N/A'}")
+    lines.append(f"Work Type: {p.get('work_type') or 'N/A'}")
+    lines.append(f"Sub Work Type: {p.get('sub_work_type') or 'N/A'}")
+    lines.append(f"Description: {p.get('permit_description') or 'N/A'}")
+    lines.append("")
+
+    # Value and fees
+    value = p.get('construction_value')
+    fee = p.get('permit_fee')
+    lines.append(f"Construction Value: ${value:,.0f}" if value else "Construction Value: N/A")
+    lines.append(f"Permit Fee: ${fee:,.0f}" if fee else "Permit Fee: N/A")
+    lines.append("")
+
+    # Dates
+    lines.append(f"Application Date: {p.get('application_date') or 'N/A'}")
+    lines.append(f"Issue Date: {p.get('issue_date') or 'N/A'}")
+    lines.append(f"Issue Year: {int(p.get('issue_year')) if p.get('issue_year') else 'N/A'}")
+    lines.append(f"Final Date: {p.get('final_date') or 'N/A'}")
+    lines.append(f"Expiry Date: {p.get('expiry_date') or 'N/A'}")
+    lines.append("")
+
+    # People
+    lines.append(f"Issued By: {p.get('issued_by') or 'N/A'}")
+    lines.append(f"Applicant: {p.get('applicant') or 'N/A'}")
+    lines.append(f"Owners: {p.get('owners') or 'N/A'}")
+    lines.append(f"Contractor: {p.get('contractor') or 'N/A'}")
+    lines.append(f"Contractor Contact: {p.get('contractor_contact') or 'N/A'}")
+    lines.append("")
+
+    # Location
+    lines.append(f"Folder Name: {p.get('folder_name') or 'N/A'}")
+    lines.append(f"Legal Description: {p.get('legal_description') or 'N/A'}")
+    lines.append(f"Roll No: {p.get('roll_no') or 'N/A'}")
+    lines.append("")
+
+    # Units
+    lines.append(f"Total Units: {p.get('total_units') or 'N/A'}")
+    lines.append(f"Units Created: {p.get('units_created') or 'N/A'}")
+    lines.append(f"Units Lost: {p.get('units_lost') or 'N/A'}")
+    lines.append(f"Units Net Change: {p.get('units_net_change') or 'N/A'}")
+
     return "\n".join(lines)
 
 
