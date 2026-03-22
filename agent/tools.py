@@ -60,6 +60,48 @@ def query_tool(department: str, role: str, zone_id: str = "") -> str:
 
 
 @tool
+def download_tool(department: str, role: str, zone_id: str = "", fmt: str = "csv") -> str:
+    """Generate a download link and a browser webview link for department data with RBAC applied.
+    Use this whenever the user asks to download, export, or view data directly.
+
+    Parameters:
+      department: one of 'engineering', 'planning', 'health', 'transit'
+      role: one of 'engineer', 'planner', 'health', 'analyst', 'admin'
+      zone_id: optional zone filter e.g. 'WR-ZONE-042'. Leave empty for all zones.
+      fmt: file format for the download link — 'csv' (default) or 'json'
+
+    Returns clickable URLs: one for a clean browser table view and one to download the file directly."""
+    base = BASE
+    params = f"role={role}"
+    if zone_id:
+        params += f"&zone_id={zone_id}"
+
+    view_url = f"{base}/view/{department}?{params}"
+    download_url = f"{base}/download/{department}?{params}&fmt={fmt}"
+
+    # Verify the endpoint is reachable and check access level
+    try:
+        resp = requests.post(f"{base}/query", json={"department": department, "role": role, **({"zone_id": zone_id} if zone_id else {})}, timeout=10)
+        result = resp.json()
+        access = result.get("access_level", "unknown")
+        count = len(result.get("rows", []))
+        if access in ("none", "suppressed"):
+            return f"Cannot generate download — access level is '{access}': {result.get('note', '')}"
+        status = f"Access level: {access} | {count} records available"
+    except Exception as e:
+        status = f"(Could not pre-check access: {e})"
+
+    zone_note = f" filtered to {zone_id}" if zone_id else ""
+    return (
+        f"{status}\n\n"
+        f"**{department.title()} data{zone_note} — role: {role}**\n\n"
+        f"- [Open in browser (table view)]({view_url})\n"
+        f"- [Download {fmt.upper()}]({download_url})\n\n"
+        f"These links open directly in a browser tab. The data is RBAC-filtered to your role."
+    )
+
+
+@tool
 def audit_tool(limit: int = 10) -> str:
     """Retrieve the governance audit log showing recent data access history.
     Use this to demonstrate data governance — who accessed what, with what role,

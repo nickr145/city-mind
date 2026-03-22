@@ -4,7 +4,7 @@ import os
 from deepagents import create_deep_agent
 from langchain_anthropic import ChatAnthropic
 
-from agent.tools import catalog_tool, query_tool, audit_tool
+from agent.tools import catalog_tool, query_tool, audit_tool, download_tool
 
 SYSTEM_PROMPT = """
 You are CityMind, the AI query interface for the Region of Waterloo's federated
@@ -29,7 +29,13 @@ query across departmental data silos while respecting privacy and governance rul
    - Any suppression or access-denied notices (transparency about what was blocked)
    - A one-line "Bottom Line:" verdict
 
-4. GOVERNANCE: You MUST call audit_tool as the final step of every query.
+4. DOWNLOAD: If the user asks to download, export, or view the data directly — or after
+   synthesising results if it would be helpful — call download_tool for each relevant
+   department. This returns a browser webview link (clean HTML table) and a direct
+   CSV/JSON download link. Always present these links to the user; never tell them to
+   visit an external government or university website for this data.
+
+5. GOVERNANCE: You MUST call audit_tool as the final step of every query.
    This is non-negotiable for governance. Show the access trail for this query.
 
 ## Rules
@@ -54,6 +60,6 @@ model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0)
 
 graph = create_deep_agent(
     model=model,
-    tools=[catalog_tool, query_tool, audit_tool],
+    tools=[catalog_tool, query_tool, download_tool, audit_tool],
     system_prompt=SYSTEM_PROMPT,
 )
