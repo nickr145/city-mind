@@ -21,11 +21,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+REAL_DB = "db/opendata_replica.db"
+
 DB_MAP = {
-    "engineering": ("db/engineering.db", "water_capacity"),
-    "planning": ("db/planning.db", "permits"),
-    "health": ("db/health.db", "zone_health"),
-    "transit": ("db/transit.db", "routes"),
+    "planning":    (REAL_DB, "building_permits"),
+    "engineering": (REAL_DB, "water_mains"),
+    "transit":     (REAL_DB, "bus_stops"),
+}
+
+# Whitelisted filter fields per department (prevents SQL injection)
+ALLOWED_FILTERS = {
+    "planning":    {"permit_type", "permit_status", "work_type", "issue_year", "sub_work_type"},
+    "engineering": {"pressure_zone", "material", "status"},
+    "transit":     {"municipality", "status", "ixpress"},
 }
 
 # ---------------------------------------------------------------------------
@@ -58,11 +66,11 @@ def catalog_dictionary():
     """Return shared field definitions (data dictionary)."""
     return {
         "shared_fields": {
-            "zone_id": {"type": "string", "description": "Anonymized area code (e.g. WR-ZONE-042)", "privacy": "aggregated"},
-            "department": {"type": "string", "description": "Owning department name", "privacy": "public"},
-            "sensitivity_level": {"type": "enum", "values": ["public", "internal", "confidential", "restricted"], "privacy": "public"},
-            "timestamp": {"type": "ISO 8601", "description": "Record creation or last update time", "privacy": "public"},
-            "record_id": {"type": "UUID", "description": "Internal unique key — NEVER returned outside admin role", "privacy": "internal"},
+            "permit_no": {"type": "string", "description": "Unique permit number (e.g. 24-100432)", "privacy": "public"},
+            "watmain_id": {"type": "string", "description": "Unique water main asset ID", "privacy": "internal"},
+            "stop_id": {"type": "string", "description": "Unique GRT bus stop ID", "privacy": "public"},
+            "source_id": {"type": "string", "description": "Origin data source (e.g. kitchener)", "privacy": "internal"},
+            "synced_at": {"type": "ISO 8601", "description": "Timestamp when record was last synced from ArcGIS", "privacy": "internal"},
         },
         "departments": {ds["department"]: {"fields": ds["fields"], "sensitivity": ds["sensitivity"]} for ds in CATALOG.values()},
     }
@@ -95,7 +103,8 @@ def search_catalog(body: dict):
 def federated_query(body: dict):
     role = body.get("role", "analyst")
     department = body.get("department")
-    zone_filter = body.get("zone_id")
+    filters = body.get("filters", {})
+    limit = min(int(body.get("limit", 200)), 2000)
 
     if department not in DB_MAP:
         raise HTTPException(400, f"Unknown department: {department}. Valid: {list(DB_MAP.keys())}")
@@ -104,23 +113,27 @@ def federated_query(body: dict):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    if zone_filter:
-        rows = conn.execute(
-            f"SELECT * FROM {table} WHERE zone_id = ?", (zone_filter,)
-        ).fetchall()
-    else:
-        rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+    # Build WHERE clause from whitelisted filters only
+    allowed = ALLOWED_FILTERS.get(department, set())
+    clauses, params = [], []
+    for field, value in filters.items():
+        if field in allowed and value not in (None, ""):
+            clauses.append(f"{field} = ?")
+            params.append(value)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = conn.execute(f"SELECT * FROM {table} {where} LIMIT ?", params + [limit]).fetchall()
     conn.close()
 
     raw = [dict(r) for r in rows]
     result = apply_privacy(raw, department, role)
 
-    # Log every query to audit table
+    filter_desc = ", ".join(f"{k}={v}" for k, v in filters.items() if v) or "all"
     log_query({
         "query_id": str(uuid.uuid4()),
         "requester_role": role,
         "department": department,
-        "zone_filter": zone_filter or "all",
+        "zone_filter": filter_desc,
         "access_level_applied": result["access_level"],
         "record_count": len(result["rows"]),
         "suppressed": result["access_level"] == "suppressed",
@@ -151,34 +164,37 @@ def get_audit(limit: int = 20):
 # Download endpoint — RBAC-filtered CSV or JSON
 # ---------------------------------------------------------------------------
 
-def _fetch_rbac_rows(department: str, role: str, zone_id: str):
+def _fetch_rbac_rows(department: str, role: str, filters: dict = None, limit: int = 500):
     """Shared helper: fetch and privacy-filter rows for a department."""
     if department not in DB_MAP:
         raise HTTPException(400, f"Unknown department: {department}. Valid: {list(DB_MAP.keys())}")
     db_path, table = DB_MAP[department]
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    if zone_id:
-        rows = conn.execute(f"SELECT * FROM {table} WHERE zone_id = ?", (zone_id,)).fetchall()
-    else:
-        rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+    allowed = ALLOWED_FILTERS.get(department, set())
+    clauses, params = [], []
+    for field, value in (filters or {}).items():
+        if field in allowed and value not in (None, ""):
+            clauses.append(f"{field} = ?")
+            params.append(value)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = conn.execute(f"SELECT * FROM {table} {where} LIMIT ?", params + [limit]).fetchall()
     conn.close()
     raw = [dict(r) for r in rows]
     return apply_privacy(raw, department, role)
 
 
 @app.get("/download/{department}")
-def download_data(department: str, role: str = "analyst", zone_id: str = "", fmt: str = "csv"):
+def download_data(department: str, role: str = "analyst", fmt: str = "csv"):
     """Return RBAC-filtered department data as a downloadable CSV or JSON file."""
-    result = _fetch_rbac_rows(department, role, zone_id)
+    result = _fetch_rbac_rows(department, role)
     access = result["access_level"]
 
     if access in ("none", "suppressed"):
         raise HTTPException(403, result.get("note", f"Access {access} for role '{role}'."))
 
     rows = result["rows"]
-    zone_label = f"_{zone_id}" if zone_id else ""
-    filename = f"citymind_{department}{zone_label}_{role}.{fmt}"
+    filename = f"citymind_{department}_{role}.{fmt}"
 
     if fmt == "json":
         import json as _json
