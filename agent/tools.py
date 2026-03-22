@@ -208,6 +208,187 @@ def query_building_permits(
 
 
 @tool
+def download_permits(
+    permit_type: str = "",
+    status: str = "",
+    min_value: float = 0,
+    issued_by: str = "",
+    issue_year: int = 0,
+    fmt: str = "csv"
+) -> str:
+    """Generate a download link for building permits from the local replica.
+    Use this when the user wants to download, export, or get a CSV/JSON of permits.
+
+    Parameters:
+      permit_type: Filter by type (e.g., 'Residential', 'Commercial')
+      status: Filter by status (e.g., 'Issued', 'Closed')
+      min_value: Minimum construction value in dollars
+      issued_by: Filter by issuing officer name
+      issue_year: Filter by year issued (e.g., 2024)
+      fmt: 'csv' or 'json' (default: csv)
+
+    Returns a download link that the user can click to get the file."""
+    params = []
+    if permit_type:
+        params.append(f"permit_type={permit_type}")
+    if status:
+        params.append(f"status={status}")
+    if min_value > 0:
+        params.append(f"min_value={min_value}")
+    if issued_by:
+        params.append(f"issued_by={issued_by}")
+    if issue_year > 0:
+        params.append(f"issue_year={issue_year}")
+    params.append(f"fmt={fmt}")
+
+    query_string = "&".join(params)
+    download_url = f"{BASE}/replica/permits/download?{query_string}"
+
+    # Get count from the search endpoint
+    search_params = {"limit": 1}
+    if permit_type:
+        search_params["permit_type"] = permit_type
+    if status:
+        search_params["status"] = status
+    if min_value > 0:
+        search_params["min_value"] = min_value
+    if issued_by:
+        search_params["issued_by"] = issued_by
+    if issue_year > 0:
+        search_params["issue_year"] = issue_year
+
+    try:
+        # Get stats to show record count
+        resp = requests.get(f"{BASE}/replica/stats", timeout=10)
+        stats = resp.json()
+        total = stats["tables"].get("building_permits", 0)
+    except Exception:
+        total = "unknown"
+
+    filters = []
+    if permit_type:
+        filters.append(f"type={permit_type}")
+    if status:
+        filters.append(f"status={status}")
+    if issue_year > 0:
+        filters.append(f"year={issue_year}")
+    if issued_by:
+        filters.append(f"issued_by={issued_by}")
+    filter_str = ", ".join(filters) if filters else "no filters (all permits)"
+
+    return (
+        f"**Building Permits Download**\n\n"
+        f"Filters: {filter_str}\n"
+        f"Total permits in database: {total:,}\n"
+        f"Format: {fmt.upper()}\n\n"
+        f"[Download {fmt.upper()} File]({download_url})\n\n"
+        f"Click the link above to download the file directly."
+    )
+
+
+@tool
+def download_water_mains(
+    pressure_zone: str = "",
+    material: str = "",
+    min_criticality: int = 0,
+    fmt: str = "csv"
+) -> str:
+    """Generate a download link for water mains data from the local replica.
+
+    Parameters:
+      pressure_zone: Filter by pressure zone
+      material: Filter by pipe material (e.g., 'DI', 'PVC', 'CI')
+      min_criticality: Minimum criticality score (0-10)
+      fmt: 'csv' or 'json' (default: csv)
+
+    Returns a download link for the water mains data."""
+    params = []
+    if pressure_zone:
+        params.append(f"pressure_zone={pressure_zone}")
+    if material:
+        params.append(f"material={material}")
+    if min_criticality > 0:
+        params.append(f"min_criticality={min_criticality}")
+    params.append(f"fmt={fmt}")
+
+    query_string = "&".join(params)
+    download_url = f"{BASE}/replica/water-mains/download?{query_string}"
+
+    try:
+        resp = requests.get(f"{BASE}/replica/stats", timeout=10)
+        stats = resp.json()
+        total = stats["tables"].get("water_mains", 0)
+    except Exception:
+        total = "unknown"
+
+    filters = []
+    if pressure_zone:
+        filters.append(f"zone={pressure_zone}")
+    if material:
+        filters.append(f"material={material}")
+    if min_criticality > 0:
+        filters.append(f"criticality>={min_criticality}")
+    filter_str = ", ".join(filters) if filters else "no filters (all water mains)"
+
+    return (
+        f"**Water Mains Download**\n\n"
+        f"Filters: {filter_str}\n"
+        f"Total water mains in database: {total:,}\n"
+        f"Format: {fmt.upper()}\n\n"
+        f"[Download {fmt.upper()} File]({download_url})\n\n"
+        f"Click the link above to download the file directly."
+    )
+
+
+@tool
+def download_bus_stops(
+    municipality: str = "",
+    ixpress_only: bool = False,
+    fmt: str = "csv"
+) -> str:
+    """Generate a download link for bus stops data from the local replica.
+
+    Parameters:
+      municipality: Filter by city (e.g., 'KITCHENER', 'WATERLOO')
+      ixpress_only: If true, only include iXpress stops
+      fmt: 'csv' or 'json' (default: csv)
+
+    Returns a download link for the bus stops data."""
+    params = []
+    if municipality:
+        params.append(f"municipality={municipality}")
+    if ixpress_only:
+        params.append("ixpress_only=true")
+    params.append(f"fmt={fmt}")
+
+    query_string = "&".join(params)
+    download_url = f"{BASE}/replica/bus-stops/download?{query_string}"
+
+    try:
+        resp = requests.get(f"{BASE}/replica/stats", timeout=10)
+        stats = resp.json()
+        total = stats["tables"].get("bus_stops", 0)
+    except Exception:
+        total = "unknown"
+
+    filters = []
+    if municipality:
+        filters.append(f"municipality={municipality}")
+    if ixpress_only:
+        filters.append("iXpress only")
+    filter_str = ", ".join(filters) if filters else "no filters (all stops)"
+
+    return (
+        f"**Bus Stops Download**\n\n"
+        f"Filters: {filter_str}\n"
+        f"Total bus stops in database: {total:,}\n"
+        f"Format: {fmt.upper()}\n\n"
+        f"[Download {fmt.upper()} File]({download_url})\n\n"
+        f"Click the link above to download the file directly."
+    )
+
+
+@tool
 def lookup_permit(permit_no: str) -> str:
     """Look up a specific building permit by its permit number.
     Returns ALL available fields for that permit including issued_by,

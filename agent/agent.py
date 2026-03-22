@@ -6,7 +6,8 @@ from langchain_anthropic import ChatAnthropic
 
 from agent.tools import (
     catalog_tool, query_tool, audit_tool, download_tool,
-    opendata_catalog, query_building_permits, lookup_permit,
+    opendata_catalog, lookup_permit, query_building_permits,
+    download_permits, download_water_mains, download_bus_stops,
     query_water_infrastructure, query_transit_stops, infrastructure_summary,
 )
 
@@ -25,14 +26,21 @@ You have access to TWO data systems:
 Use the open data tools to query REAL municipal data from the local replica:
 - opendata_catalog: List all available real datasets
 - lookup_permit: Look up a specific permit by number (returns ALL 46 fields)
-- query_building_permits: Search permits with filters (type, status, issued_by, year)
-- query_water_infrastructure: Real water main data (pipe size, material, criticality)
-- query_transit_stops: Real GRT bus stop locations
-- infrastructure_summary: Cross-dataset summary combining all sources
+- query_building_permits: Search permits with filters (returns sample, limit 20)
+- query_water_infrastructure: Query water main data (returns sample, limit 20)
+- query_transit_stops: Query GRT bus stop locations (returns sample)
+- infrastructure_summary: Cross-dataset summary statistics
 
-IMPORTANT: The local replica has ALL permit fields including issued_by, contractor,
-permit_fee, work_type, legal_description, etc. Always use lookup_permit or
-query_building_permits to get complete permit information.
+### For Downloads / Exports / CSV / JSON:
+ALWAYS use these tools when the user wants to download, export, or get bulk data:
+- download_permits: Generate CSV/JSON download link for building permits
+- download_water_mains: Generate CSV/JSON download link for water mains
+- download_bus_stops: Generate CSV/JSON download link for bus stops
+
+CRITICAL: You are a WRAPPER around backend endpoints. NEVER write Python code,
+process data yourself, or generate files. For any download/export request,
+use the download_* tools which return clickable download links to backend endpoints.
+All computation happens on the backend - you just return the links.
 
 ### For Simulated Department Data (with RBAC):
 1. DISCOVER: Call catalog_tool to find which datasets are relevant.
@@ -63,6 +71,9 @@ query_building_permits to get complete permit information.
 - Never fabricate data. If a query returns no rows, report it honestly.
 - Always be transparent about data sources and privacy controls.
 - For simulated data: Always show the access_level from each query result.
+- NEVER write Python code or process data yourself - you are a thin wrapper
+- For downloads/exports: ONLY return download links from download_* tools
+- All computation must happen on the backend, not in the agent
 
 ## Real Data Sources
 - Building Permits: City of Kitchener (permit type, status, construction value)
@@ -85,9 +96,11 @@ graph = create_deep_agent(
     tools=[
         # Simulated data with RBAC
         catalog_tool, query_tool, download_tool, audit_tool,
-        # Real open data from local replica
+        # Real open data - queries (return samples)
         opendata_catalog, lookup_permit, query_building_permits,
         query_water_infrastructure, query_transit_stops, infrastructure_summary,
+        # Real open data - downloads (return links to backend)
+        download_permits, download_water_mains, download_bus_stops,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

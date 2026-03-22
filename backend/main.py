@@ -482,6 +482,75 @@ def get_replica_permits(
     }
 
 
+@app.get("/replica/permits/download")
+def download_replica_permits(
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    issued_by: str = None,
+    issue_year: int = None,
+    fmt: str = "csv",
+):
+    """Download building permits from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if permit_type:
+        clauses.append("permit_type LIKE ?")
+        params.append(f"%{permit_type}%")
+    if status:
+        clauses.append("permit_status LIKE ?")
+        params.append(f"%{status}%")
+    if min_value:
+        clauses.append("construction_value >= ?")
+        params.append(min_value)
+    if issued_by:
+        clauses.append("issued_by LIKE ?")
+        params.append(f"%{issued_by}%")
+    if issue_year:
+        clauses.append("issue_year = ?")
+        params.append(float(issue_year))
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM building_permits WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No permits found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "building_permits"
+    if issue_year:
+        filename += f"_{issue_year}"
+    if permit_type:
+        filename += f"_{permit_type.replace(' ', '_')}"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "permits": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    # Default: CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
 @app.get("/replica/permits/{permit_no}")
 def get_replica_permit_by_id(permit_no: str):
     """Get a single building permit by permit number from local replica."""
@@ -541,6 +610,62 @@ def get_replica_water_mains(
     }
 
 
+@app.get("/replica/water-mains/download")
+def download_replica_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    fmt: str = "csv",
+):
+    """Download water mains from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if pressure_zone:
+        clauses.append("pressure_zone LIKE ?")
+        params.append(f"%{pressure_zone}%")
+    if material:
+        clauses.append("material = ?")
+        params.append(material)
+    if min_criticality:
+        clauses.append("criticality >= ?")
+        params.append(min_criticality)
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM water_mains WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No water mains found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "water_mains"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "water_mains": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
 @app.get("/replica/bus-stops")
 def get_replica_bus_stops(
     municipality: str = None,
@@ -571,6 +696,59 @@ def get_replica_bus_stops(
         "record_count": len(rows),
         "features": [dict(row) for row in rows],
     }
+
+
+@app.get("/replica/bus-stops/download")
+def download_replica_bus_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    fmt: str = "csv",
+):
+    """Download bus stops from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if municipality:
+        clauses.append("municipality = ?")
+        params.append(municipality)
+    if ixpress_only:
+        clauses.append("ixpress = 'Y'")
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM bus_stops WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No bus stops found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "bus_stops"
+    if municipality:
+        filename += f"_{municipality}"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "bus_stops": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
 
 
 @app.get("/replica/stats")
