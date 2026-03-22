@@ -129,6 +129,21 @@ export async function getBuildingPermitsGeo(limit = 1000, source = '', year = nu
   return res.json();
 }
 
+// ── AI Chat ───────────────────────────────────────────────────────────────────
+
+export async function chatWithAgent(message) {
+  const res = await fetch(`${BASE}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Chat request failed');
+  }
+  return res.json(); // { reply: string }
+}
+
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
 export async function getSyncStatus() {

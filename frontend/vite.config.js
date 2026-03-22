@@ -15,6 +15,7 @@ export default defineConfig({
       '/sync':    'http://localhost:8000',
       '/geo':     'http://localhost:8000',
       '/replica': 'http://localhost:8000',
+      '/chat':    'http://localhost:8000',
     },
   },
 });
