@@ -1,4 +1,4 @@
-const BASE = '';  // proxied via vite dev server
+const BASE = import.meta.env.VITE_API_URL || '';  // proxied via vite dev server in dev; set VITE_API_URL for production
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
