@@ -303,6 +303,482 @@ def view_data(department: str, role: str = "analyst", zone_id: str = ""):
 
 
 # ---------------------------------------------------------------------------
+# ArcGIS Open Data endpoints (Real data from Region of Waterloo / Kitchener)
+# ---------------------------------------------------------------------------
+
+from arcgis_client import get_client, DATASETS as ARCGIS_DATASETS
+from sync import sync_router
+
+# Include sync router for tiered read replica pattern
+app.include_router(sync_router)
+
+
+@app.get("/opendata/datasets")
+def list_opendata_datasets():
+    """List available open data datasets from ArcGIS."""
+    return {
+        "datasets": [
+            {
+                "id": k,
+                "name": v["name"],
+                "source": v["source"],
+                "description": v["description"],
+                "fields": v["fields"],
+            }
+            for k, v in ARCGIS_DATASETS.items()
+        ],
+        "count": len(ARCGIS_DATASETS),
+    }
+
+
+@app.post("/opendata/query")
+def query_opendata(body: dict):
+    """
+    Query open data from ArcGIS.
+
+    Body params:
+        dataset: 'building_permits', 'water_mains', or 'bus_stops'
+        where: Optional SQL WHERE clause (default: '1=1')
+        fields: Optional list of fields to return
+        limit: Max records (default: 100, max: 2000)
+    """
+    dataset = body.get("dataset")
+    if not dataset:
+        raise HTTPException(400, "Missing 'dataset' parameter")
+
+    client = get_client()
+    try:
+        result = client.query(
+            dataset=dataset,
+            where=body.get("where", "1=1"),
+            out_fields=body.get("fields"),
+            result_record_count=min(body.get("limit", 100), 2000),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"ArcGIS query failed: {e}")
+
+
+@app.get("/opendata/permits")
+def get_permits(
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    limit: int = 100,
+):
+    """Query building permits from City of Kitchener."""
+    client = get_client()
+    return client.get_building_permits(
+        permit_type=permit_type,
+        status=status,
+        min_value=min_value,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/water-mains")
+def get_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    limit: int = 100,
+):
+    """Query water main infrastructure from City of Kitchener."""
+    client = get_client()
+    return client.get_water_mains(
+        pressure_zone=pressure_zone,
+        material=material,
+        min_criticality=min_criticality,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/transit-stops")
+def get_transit_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    limit: int = 100,
+):
+    """Query GRT bus stops."""
+    client = get_client()
+    return client.get_bus_stops(
+        municipality=municipality,
+        ixpress_only=ixpress_only,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/infrastructure-summary")
+def get_infrastructure_summary(zone: str = None):
+    """Get cross-dataset infrastructure summary."""
+    client = get_client()
+    return client.get_infrastructure_summary(zone=zone)
+
+
+# ---------------------------------------------------------------------------
+# Local Replica endpoints (query aggregated data from SQLite)
+# ---------------------------------------------------------------------------
+
+from pathlib import Path
+
+REPLICA_DB = Path(__file__).parent / "db" / "opendata_replica.db"
+
+
+def _get_replica_conn():
+    """Get a connection to the replica database."""
+    conn = sqlite3.connect(str(REPLICA_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.get("/replica/permits")
+def get_replica_permits(
+    permit_no: str = None,
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    issued_by: str = None,
+    issue_year: int = None,
+    limit: int = 100,
+):
+    """Query building permits from local replica (all 46 fields available)."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if permit_no:
+        clauses.append("permit_no = ?")
+        params.append(permit_no)
+    if permit_type:
+        clauses.append("permit_type LIKE ?")
+        params.append(f"%{permit_type}%")
+    if status:
+        clauses.append("permit_status LIKE ?")
+        params.append(f"%{status}%")
+    if min_value:
+        clauses.append("construction_value >= ?")
+        params.append(min_value)
+    if issued_by:
+        clauses.append("issued_by LIKE ?")
+        params.append(f"%{issued_by}%")
+    if issue_year:
+        clauses.append("issue_year = ?")
+        params.append(float(issue_year))
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM building_permits WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/permits/download")
+def download_replica_permits(
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    issued_by: str = None,
+    issue_year: int = None,
+    fmt: str = "csv",
+):
+    """Download building permits from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if permit_type:
+        clauses.append("permit_type LIKE ?")
+        params.append(f"%{permit_type}%")
+    if status:
+        clauses.append("permit_status LIKE ?")
+        params.append(f"%{status}%")
+    if min_value:
+        clauses.append("construction_value >= ?")
+        params.append(min_value)
+    if issued_by:
+        clauses.append("issued_by LIKE ?")
+        params.append(f"%{issued_by}%")
+    if issue_year:
+        clauses.append("issue_year = ?")
+        params.append(float(issue_year))
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM building_permits WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No permits found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "building_permits"
+    if issue_year:
+        filename += f"_{issue_year}"
+    if permit_type:
+        filename += f"_{permit_type.replace(' ', '_')}"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "permits": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    # Default: CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+@app.get("/replica/permits/{permit_no}")
+def get_replica_permit_by_id(permit_no: str):
+    """Get a single building permit by permit number from local replica."""
+    conn = _get_replica_conn()
+    row = conn.execute(
+        "SELECT * FROM building_permits WHERE permit_no = ?", (permit_no,)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(404, f"Permit {permit_no} not found")
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "permit": dict(row),
+    }
+
+
+@app.get("/replica/water-mains")
+def get_replica_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    status: str = None,
+    limit: int = 100,
+):
+    """Query water mains from local replica."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if pressure_zone:
+        clauses.append("pressure_zone LIKE ?")
+        params.append(f"%{pressure_zone}%")
+    if material:
+        clauses.append("material = ?")
+        params.append(material)
+    if min_criticality:
+        clauses.append("criticality >= ?")
+        params.append(min_criticality)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM water_mains WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (City of Kitchener)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/water-mains/download")
+def download_replica_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    fmt: str = "csv",
+):
+    """Download water mains from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if pressure_zone:
+        clauses.append("pressure_zone LIKE ?")
+        params.append(f"%{pressure_zone}%")
+    if material:
+        clauses.append("material = ?")
+        params.append(material)
+    if min_criticality:
+        clauses.append("criticality >= ?")
+        params.append(min_criticality)
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM water_mains WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No water mains found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "water_mains"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "water_mains": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+@app.get("/replica/bus-stops")
+def get_replica_bus_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    limit: int = 100,
+):
+    """Query bus stops from local replica."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if municipality:
+        clauses.append("municipality = ?")
+        params.append(municipality)
+    if ixpress_only:
+        clauses.append("ixpress = 'Y'")
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM bus_stops WHERE {where} LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return {
+        "source": "Local Replica (GRT / Region of Waterloo)",
+        "record_count": len(rows),
+        "features": [dict(row) for row in rows],
+    }
+
+
+@app.get("/replica/bus-stops/download")
+def download_replica_bus_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    fmt: str = "csv",
+):
+    """Download bus stops from local replica as CSV or JSON."""
+    conn = _get_replica_conn()
+
+    clauses = []
+    params = []
+
+    if municipality:
+        clauses.append("municipality = ?")
+        params.append(municipality)
+    if ixpress_only:
+        clauses.append("ixpress = 'Y'")
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    query = f"SELECT * FROM bus_stops WHERE {where}"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No bus stops found matching criteria")
+
+    records = [dict(row) for row in rows]
+    filename = "bus_stops"
+    if municipality:
+        filename += f"_{municipality}"
+
+    if fmt == "json":
+        import json as _json
+        content = _json.dumps({"record_count": len(records), "bus_stops": records}, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=records[0].keys())
+    writer.writeheader()
+    writer.writerows(records)
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+@app.get("/replica/stats")
+def get_replica_stats():
+    """Get statistics about the local replica database."""
+    conn = _get_replica_conn()
+
+    stats = {}
+    for table in ["building_permits", "water_mains", "bus_stops"]:
+        try:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            stats[table] = count
+        except Exception:
+            stats[table] = 0
+
+    # Get last sync time
+    last_sync = conn.execute(
+        "SELECT MAX(completed_at) FROM sync_runs WHERE status = 'completed'"
+    ).fetchone()[0]
+
+    conn.close()
+
+    return {
+        "tables": stats,
+        "total_records": sum(stats.values()),
+        "last_sync": last_sync,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 
