@@ -303,6 +303,121 @@ def view_data(department: str, role: str = "analyst", zone_id: str = ""):
 
 
 # ---------------------------------------------------------------------------
+# ArcGIS Open Data endpoints (Real data from Region of Waterloo / Kitchener)
+# ---------------------------------------------------------------------------
+
+from arcgis_client import get_client, DATASETS as ARCGIS_DATASETS
+from sync import sync_router
+
+# Include sync router for tiered read replica pattern
+app.include_router(sync_router)
+
+
+@app.get("/opendata/datasets")
+def list_opendata_datasets():
+    """List available open data datasets from ArcGIS."""
+    return {
+        "datasets": [
+            {
+                "id": k,
+                "name": v["name"],
+                "source": v["source"],
+                "description": v["description"],
+                "fields": v["fields"],
+            }
+            for k, v in ARCGIS_DATASETS.items()
+        ],
+        "count": len(ARCGIS_DATASETS),
+    }
+
+
+@app.post("/opendata/query")
+def query_opendata(body: dict):
+    """
+    Query open data from ArcGIS.
+
+    Body params:
+        dataset: 'building_permits', 'water_mains', or 'bus_stops'
+        where: Optional SQL WHERE clause (default: '1=1')
+        fields: Optional list of fields to return
+        limit: Max records (default: 100, max: 2000)
+    """
+    dataset = body.get("dataset")
+    if not dataset:
+        raise HTTPException(400, "Missing 'dataset' parameter")
+
+    client = get_client()
+    try:
+        result = client.query(
+            dataset=dataset,
+            where=body.get("where", "1=1"),
+            out_fields=body.get("fields"),
+            result_record_count=min(body.get("limit", 100), 2000),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"ArcGIS query failed: {e}")
+
+
+@app.get("/opendata/permits")
+def get_permits(
+    permit_type: str = None,
+    status: str = None,
+    min_value: float = None,
+    limit: int = 100,
+):
+    """Query building permits from City of Kitchener."""
+    client = get_client()
+    return client.get_building_permits(
+        permit_type=permit_type,
+        status=status,
+        min_value=min_value,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/water-mains")
+def get_water_mains(
+    pressure_zone: str = None,
+    material: str = None,
+    min_criticality: int = None,
+    limit: int = 100,
+):
+    """Query water main infrastructure from City of Kitchener."""
+    client = get_client()
+    return client.get_water_mains(
+        pressure_zone=pressure_zone,
+        material=material,
+        min_criticality=min_criticality,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/transit-stops")
+def get_transit_stops(
+    municipality: str = None,
+    ixpress_only: bool = False,
+    limit: int = 100,
+):
+    """Query GRT bus stops."""
+    client = get_client()
+    return client.get_bus_stops(
+        municipality=municipality,
+        ixpress_only=ixpress_only,
+        limit=limit,
+    )
+
+
+@app.get("/opendata/infrastructure-summary")
+def get_infrastructure_summary(zone: str = None):
+    """Get cross-dataset infrastructure summary."""
+    client = get_client()
+    return client.get_infrastructure_summary(zone=zone)
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 

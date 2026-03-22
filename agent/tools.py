@@ -120,3 +120,205 @@ def audit_tool(limit: int = 10) -> str:
             f"records={entry['record_count']}{suppressed}"
         )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Real Open Data Tools (ArcGIS - Region of Waterloo / City of Kitchener)
+# ---------------------------------------------------------------------------
+
+@tool
+def opendata_catalog() -> str:
+    """List available real open data datasets from Region of Waterloo and
+    City of Kitchener ArcGIS portals. Use this to discover what real
+    municipal data is available."""
+    resp = requests.get(f"{BASE}/opendata/datasets", timeout=10)
+    data = resp.json()
+    lines = ["Available Open Data from Region of Waterloo / Kitchener:"]
+    for ds in data["datasets"]:
+        lines.append(
+            f"\n- {ds['name']} (id: {ds['id']})"
+            f"\n  Source: {ds['source']}"
+            f"\n  Description: {ds['description']}"
+            f"\n  Fields: {', '.join(ds['fields'][:6])}..."
+        )
+    return "\n".join(lines)
+
+
+@tool
+def query_building_permits(
+    permit_type: str = "",
+    status: str = "",
+    min_value: float = 0,
+    limit: int = 20
+) -> str:
+    """Query real building permits from City of Kitchener open data.
+
+    Parameters:
+      permit_type: Filter by type (e.g., 'Residential', 'Commercial', 'Alteration')
+      status: Filter by status (e.g., 'Issued', 'Closed', 'In Review')
+      min_value: Minimum construction value in dollars
+      limit: Max records to return (default 20)
+
+    Returns actual permit data including permit number, type, status, and value."""
+    params = {"limit": limit}
+    if permit_type:
+        params["permit_type"] = permit_type
+    if status:
+        params["status"] = status
+    if min_value > 0:
+        params["min_value"] = min_value
+
+    resp = requests.get(f"{BASE}/opendata/permits", params=params, timeout=30)
+    data = resp.json()
+
+    lines = [f"Building Permits from {data['source']} ({data['record_count']} records):"]
+    for p in data["features"][:10]:
+        value = p.get("CONSTRUCTION_VALUE")
+        value_str = f"${value:,.0f}" if value else "N/A"
+        lines.append(
+            f"  - {p.get('PERMITNO')}: {p.get('PERMIT_TYPE')}"
+            f"\n    Status: {p.get('PERMIT_STATUS')} | Value: {value_str}"
+        )
+    if data["record_count"] > 10:
+        lines.append(f"  ... and {data['record_count'] - 10} more permits")
+    return "\n".join(lines)
+
+
+@tool
+def query_water_infrastructure(
+    pressure_zone: str = "",
+    material: str = "",
+    min_criticality: int = 0,
+    limit: int = 20
+) -> str:
+    """Query real water main infrastructure from City of Kitchener open data.
+
+    Parameters:
+      pressure_zone: Filter by pressure zone (e.g., 'KIT 2E', 'MANNHEIM')
+      material: Filter by pipe material (e.g., 'DI', 'PVC', 'CI', 'AC')
+      min_criticality: Minimum criticality score (0-10, higher = more critical)
+      limit: Max records to return (default 20)
+
+    Returns actual water main data including pipe size, material, and condition."""
+    params = {"limit": limit}
+    if pressure_zone:
+        params["pressure_zone"] = pressure_zone
+    if material:
+        params["material"] = material
+    if min_criticality > 0:
+        params["min_criticality"] = min_criticality
+
+    resp = requests.get(f"{BASE}/opendata/water-mains", params=params, timeout=30)
+    data = resp.json()
+
+    lines = [f"Water Mains from {data['source']} ({data['record_count']} records):"]
+
+    # Summarize by material
+    materials = {}
+    criticalities = []
+    for m in data["features"]:
+        mat = m.get("MATERIAL", "UNKNOWN")
+        materials[mat] = materials.get(mat, 0) + 1
+        if m.get("CRITICALITY") is not None:
+            criticalities.append(m["CRITICALITY"])
+
+    lines.append(f"  Materials: {materials}")
+    if criticalities:
+        avg_crit = sum(criticalities) / len(criticalities)
+        lines.append(f"  Avg Criticality: {avg_crit:.2f} (scale 0-10)")
+
+    # Show sample records
+    lines.append("\n  Sample records:")
+    for m in data["features"][:5]:
+        lines.append(
+            f"    - Size: {m.get('PIPE_SIZE')}mm | Material: {m.get('MATERIAL')} | "
+            f"Zone: {m.get('PRESSURE_ZONE')} | Criticality: {m.get('CRITICALITY')}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def query_transit_stops(
+    municipality: str = "",
+    ixpress_only: bool = False,
+    limit: int = 50
+) -> str:
+    """Query real GRT bus stop locations from Region of Waterloo open data.
+
+    Parameters:
+      municipality: Filter by city (e.g., 'KITCHENER', 'WATERLOO', 'CAMBRIDGE')
+      ixpress_only: If true, only return iXpress rapid transit stops
+      limit: Max records to return (default 50)
+
+    Returns actual bus stop data including location and route info."""
+    params = {"limit": limit}
+    if municipality:
+        params["municipality"] = municipality
+    if ixpress_only:
+        params["ixpress_only"] = "true"
+
+    resp = requests.get(f"{BASE}/opendata/transit-stops", params=params, timeout=30)
+    data = resp.json()
+
+    lines = [f"GRT Bus Stops from {data['source']} ({data['record_count']} records):"]
+
+    # Count by municipality
+    munis = {}
+    ixpress_count = 0
+    for s in data["features"]:
+        muni = s.get("MUNICIPALITY", "UNKNOWN")
+        munis[muni] = munis.get(muni, 0) + 1
+        if s.get("IXPRESS") == "Y":
+            ixpress_count += 1
+
+    lines.append(f"  By Municipality: {munis}")
+    lines.append(f"  iXpress Stops: {ixpress_count}")
+
+    # Show sample stops
+    lines.append("\n  Sample stops:")
+    for s in data["features"][:8]:
+        ixpress = " [iXpress]" if s.get("IXPRESS") == "Y" else ""
+        lines.append(
+            f"    - Stop {s.get('STOP_ID')}: {s.get('STREET')} @ {s.get('CROSSSTREET')}{ixpress}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def infrastructure_summary(zone: str = "") -> str:
+    """Get a cross-dataset infrastructure summary combining water, permits, and transit.
+
+    Parameters:
+      zone: Optional pressure zone filter for water mains
+
+    Returns aggregated statistics across all open data sources."""
+    params = {}
+    if zone:
+        params["zone"] = zone
+
+    resp = requests.get(f"{BASE}/opendata/infrastructure-summary", params=params, timeout=60)
+    data = resp.json()
+
+    lines = ["=== Infrastructure Summary (Real Open Data) ==="]
+
+    # Water mains
+    wm = data["water_mains"]
+    lines.append(f"\nWATER INFRASTRUCTURE:")
+    lines.append(f"  Total mains: {wm['total']}")
+    lines.append(f"  Avg criticality: {wm['avg_criticality']:.2f}")
+    lines.append(f"  By material: {wm['by_material']}")
+
+    # Permits
+    pm = data["permits"]
+    lines.append(f"\nBUILDING PERMITS:")
+    lines.append(f"  Total permits: {pm['total']}")
+    lines.append(f"  Total construction value: ${pm['total_value']:,.0f}")
+    lines.append(f"  By status: {pm['by_status']}")
+
+    # Transit
+    tr = data["transit"]
+    lines.append(f"\nTRANSIT:")
+    lines.append(f"  Total bus stops: {tr['total_stops']}")
+    lines.append(f"  iXpress stops: {tr['ixpress_stops']}")
+
+    return "\n".join(lines)
