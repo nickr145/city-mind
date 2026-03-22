@@ -1,0 +1,9 @@
+deepagents
+langchain-anthropic
+langsmith
+langgraph
+langgraph-cli[inmem]
+fastapi
+uvicorn
+python-dotenv
+requests
