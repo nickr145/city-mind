@@ -1,5 +1,7 @@
 const BASE = '';  // proxied via vite dev server
 
+// ── Catalog ──────────────────────────────────────────────────────────────────
+
 export async function getCatalog() {
   const res = await fetch(`${BASE}/catalog`);
   if (!res.ok) throw new Error('Failed to fetch catalog');
@@ -24,15 +26,27 @@ export async function getDataset(datasetId) {
   return res.json();
 }
 
-export async function searchCatalog({ tags = [], department } = {}) {
+export async function searchCatalog({ tags = [], department, query = '' } = {}) {
   const res = await fetch(`${BASE}/catalog/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tags, department }),
+    body: JSON.stringify({ tags, department, query }),
   });
   if (!res.ok) throw new Error('Catalog search failed');
   return res.json();
 }
+
+export async function upsertDataset({ role, dataset }) {
+  const res = await fetch(`${BASE}/catalog/datasets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, dataset }),
+  });
+  if (!res.ok) throw new Error('Failed to upsert dataset');
+  return res.json();
+}
+
+// ── Audit ─────────────────────────────────────────────────────────────────────
 
 export async function getAuditLog(limit = 50) {
   const res = await fetch(`${BASE}/audit?limit=${limit}`);
@@ -40,12 +54,56 @@ export async function getAuditLog(limit = 50) {
   return res.json();
 }
 
-export async function queryDepartment({ department, role = 'analyst', filters = {}, limit = 200 }) {
+// ── Query ─────────────────────────────────────────────────────────────────────
+
+export async function queryDepartment({ department, role = 'analyst', filters = {}, limit = 200, as_of = null }) {
   const res = await fetch(`${BASE}/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ department, role, filters, limit }),
+    body: JSON.stringify({ department, role, filters, limit, ...(as_of ? { as_of } : {}) }),
   });
   if (!res.ok) throw new Error(`Query failed for ${department}`);
+  return res.json();
+}
+
+export async function crossQuery({ role = 'analyst', limit = 200 } = {}) {
+  const res = await fetch(`${BASE}/query/cross`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, limit }),
+  });
+  if (!res.ok) throw new Error('Cross-departmental query failed');
+  return res.json();
+}
+
+// ── Geo ───────────────────────────────────────────────────────────────────────
+
+export async function getBusStopsGeo(limit = 500) {
+  const res = await fetch(`${BASE}/geo/bus-stops?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch bus stop geometry');
+  return res.json();
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+
+export async function getSyncStatus() {
+  const res = await fetch(`${BASE}/sync/status`);
+  if (!res.ok) throw new Error('Failed to fetch sync status');
+  return res.json();
+}
+
+export async function getSyncRuns(limit = 20) {
+  const res = await fetch(`${BASE}/sync/runs?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch sync runs');
+  return res.json();
+}
+
+export async function triggerSync(datasets = []) {
+  const res = await fetch(`${BASE}/sync/trigger`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ datasets }),
+  });
+  if (!res.ok) throw new Error('Failed to trigger sync');
   return res.json();
 }

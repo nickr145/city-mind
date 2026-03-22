@@ -53,6 +53,9 @@ NUMERIC_FIELDS = {
     "transit": [],
 }
 
+# Minimum records before suppression kicks in
+SUPPRESSION_THRESHOLD = 5
+
 
 def apply_privacy(rows: list, dept: str, role: str) -> dict:
     access = ROLE_ACCESS.get(role, {}).get(dept, "none")
@@ -93,10 +96,23 @@ def apply_privacy(rows: list, dept: str, role: str) -> dict:
                     n = summary[key_val]["record_count"]
                     prev = summary[key_val][f"avg_{f}"]
                     summary[key_val][f"avg_{f}"] = round((prev * (n - 1) + v) / n, 2)
-        return {"rows": list(summary.values()), "access_level": "aggregated"}
+        rows_out = list(summary.values())
+        if len(rows_out) < SUPPRESSION_THRESHOLD:
+            return {
+                "rows": [],
+                "access_level": "suppressed",
+                "note": f"Result suppressed: fewer than {SUPPRESSION_THRESHOLD} aggregation groups returned.",
+            }
+        return {"rows": rows_out, "access_level": "aggregated"}
 
     if access == "anonymized":
         stripped = [{k: v for k, v in r.items() if k not in pii} for r in cleaned]
+        if len(stripped) < SUPPRESSION_THRESHOLD:
+            return {
+                "rows": [],
+                "access_level": "suppressed",
+                "note": f"Result suppressed: fewer than {SUPPRESSION_THRESHOLD} records returned.",
+            }
         return {"rows": stripped, "access_level": "anonymized"}
 
     return {"rows": [], "access_level": "denied"}

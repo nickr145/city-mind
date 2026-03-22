@@ -1,62 +1,20 @@
 # backend/catalog.py
+# Catalog is stored in catalog.json — edit that file to add/update datasets.
 
-CATALOG = {
-    "kitchener_building_permits": {
-        "dataset_id": "kitchener_building_permits",
-        "department": "planning",
-        "name": "Building Permits — City of Kitchener",
-        "description": "All building permits issued by the City of Kitchener, sourced from the open ArcGIS portal. Includes permit type, status, construction value, work type, and applicant info.",
-        "sensitivity": "public",
-        "fields": [
-            "permit_no", "permit_type", "permit_status", "work_type", "sub_work_type",
-            "application_date", "issue_date", "issue_year", "construction_value",
-            "permit_description", "folder_name",
-        ],
-        "pii_fields": [
-            "owners", "applicant", "contractor", "contractor_contact",
-            "roll_no", "legal_description", "parcel_id", "folder_rsn",
-        ],
-        "allowed_roles": ["engineer", "planner", "health", "analyst", "admin"],
-        "integration_key": "permit_type",
-        "filters": ["permit_type", "permit_status", "work_type", "issue_year"],
-        "tags": ["permits", "building", "planning", "kitchener", "construction", "development", "housing"],
-        "steward": "planning@kitchener.ca",
-        "source": "City of Kitchener Open Data (ArcGIS)",
-        "last_updated": "2026-03-22",
-        "record_count": 74565,
-    },
-    "kitchener_water_mains": {
-        "dataset_id": "kitchener_water_mains",
-        "department": "engineering",
-        "name": "Water Mains — City of Kitchener",
-        "description": "Water main infrastructure including pipe size, material, pressure zone, and criticality rating. Used for infrastructure planning and condition assessment.",
-        "sensitivity": "internal",
-        "fields": ["watmain_id", "status", "pressure_zone", "pipe_size", "material", "criticality"],
-        "pii_fields": [],
-        "allowed_roles": ["engineer", "planner", "analyst", "admin"],
-        "integration_key": "pressure_zone",
-        "filters": ["pressure_zone", "material", "status"],
-        "tags": ["infrastructure", "water", "mains", "engineering", "kitchener", "capacity"],
-        "steward": "engineering@kitchener.ca",
-        "source": "City of Kitchener Open Data (ArcGIS)",
-        "last_updated": "2026-03-22",
-        "record_count": 16163,
-    },
-    "kitchener_bus_stops": {
-        "dataset_id": "kitchener_bus_stops",
-        "department": "transit",
-        "name": "Bus Stops — GRT / Kitchener",
-        "description": "Grand River Transit bus stop locations with street, cross-street, municipality, and iXpress corridor status.",
-        "sensitivity": "public",
-        "fields": ["stop_id", "street", "crossstreet", "municipality", "ixpress", "status"],
-        "pii_fields": [],
-        "allowed_roles": ["engineer", "planner", "health", "analyst", "admin"],
-        "integration_key": "municipality",
-        "filters": ["municipality", "status", "ixpress"],
-        "tags": ["transit", "bus", "stops", "grt", "kitchener", "waterloo", "cambridge", "ridership"],
-        "steward": "grt@regionofwaterloo.ca",
-        "source": "City of Kitchener Open Data (ArcGIS)",
-        "last_updated": "2026-03-22",
-        "record_count": 1178,
-    },
-}
+import json
+import pathlib
+
+_CATALOG_PATH = pathlib.Path(__file__).parent / "catalog.json"
+
+
+def _load() -> dict:
+    with open(_CATALOG_PATH) as f:
+        return json.load(f)
+
+
+def _save(catalog: dict) -> None:
+    with open(_CATALOG_PATH, "w") as f:
+        json.dump(catalog, f, indent=2)
+
+
+CATALOG = _load()
