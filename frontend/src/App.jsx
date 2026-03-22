@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
+import ChatWidget from './components/ChatWidget.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Dictionary from './pages/Dictionary.jsx';
 import AuditLog from './pages/AuditLog.jsx';
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/sync-status"   element={<SyncStatus />} />
           </Routes>
         </main>
+        <ChatWidget />
       </div>
     </HashRouter>
   );

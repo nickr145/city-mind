@@ -7,6 +7,16 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Load .env from project root (parent of backend/)
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            import os as _os
+            _os.environ.setdefault(_k.strip(), _v.strip())
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
@@ -964,6 +974,36 @@ def download_replica_bus_stops(municipality: str = None, ixpress_only: bool = Fa
     writer.writeheader(); writer.writerows(records); output.seek(0)
     return StreamingResponse(io.BytesIO(output.getvalue().encode()), media_type="text/csv",
                              headers={"Content-Disposition": 'attachment; filename="bus_stops.csv"'})
+
+
+@app.post("/chat")
+def chat(body: dict):
+    """AI chatbot endpoint — runs the CityMind LangGraph agent."""
+    import sys
+    from pathlib import Path as _Path
+
+    # Make the project root importable so `agent` package resolves
+    _root = str(_Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+
+    try:
+        from langchain_core.messages import HumanMessage
+        from agent.agent import graph
+    except Exception as exc:
+        raise HTTPException(500, f"Agent unavailable: {exc}") from exc
+
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message is required")
+
+    try:
+        result = graph.invoke({"messages": [HumanMessage(content=message)]})
+        reply = result["messages"][-1].content
+    except Exception as exc:
+        raise HTTPException(500, f"Agent error: {exc}") from exc
+
+    return {"reply": reply}
 
 
 @app.get("/replica/stats", deprecated=True)
