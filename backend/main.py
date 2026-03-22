@@ -480,6 +480,159 @@ def geo_bus_stops(limit: int = 500):
         return JSONResponse(content=_rows_to_geojson(result["rows"]))
 
 
+@app.get("/geo/water-mains")
+def geo_water_mains(limit: int = 2000, source: str = ""):
+    """
+    Return water main lines as GeoJSON, fetching geometry from ArcGIS.
+    Supports both Kitchener and Waterloo sources.
+    """
+    import httpx
+
+    features = []
+
+    # Kitchener water mains
+    if not source or source == "kitchener":
+        kit_url = (
+            "https://services1.arcgis.com/qAo1OsXi67t7XgmS/arcgis/rest/services"
+            "/Water_Mains/FeatureServer/0/query"
+        )
+        params = {
+            "f": "geojson",
+            "where": "1=1",
+            "outFields": "WATMAINID,STATUS,PRESSURE_ZONE,PIPE_SIZE,MATERIAL,CRITICALITY",
+            "returnGeometry": "true",
+            "outSR": "4326",
+            "resultRecordCount": min(limit, 2000),
+        }
+        try:
+            resp = httpx.get(kit_url, params=params, timeout=20.0)
+            resp.raise_for_status()
+            data = resp.json()
+            for feature in data.get("features", []):
+                props = feature.get("properties", {})
+                feature["properties"] = {k.lower(): v for k, v in props.items()}
+                feature["properties"]["source_id"] = "kitchener"
+            features.extend(data.get("features", []))
+        except Exception:
+            pass
+
+    # Waterloo water mains
+    if not source or source == "waterloo_city":
+        wat_url = (
+            "https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services"
+            "/Water_Distribution_Mains/FeatureServer/0/query"
+        )
+        params = {
+            "f": "geojson",
+            "where": "1=1",
+            "outFields": "ASSET_ID,LIFECYCLESTATUS,PRESSURE_ZONE,DIAMETER,MATERIAL",
+            "returnGeometry": "true",
+            "outSR": "4326",
+            "resultRecordCount": min(limit, 2000),
+        }
+        try:
+            resp = httpx.get(wat_url, params=params, timeout=20.0)
+            resp.raise_for_status()
+            data = resp.json()
+            for feature in data.get("features", []):
+                props = feature.get("properties", {})
+                # Normalize field names to match Kitchener schema
+                feature["properties"] = {
+                    "watmain_id": props.get("ASSET_ID"),
+                    "status": props.get("LIFECYCLESTATUS"),
+                    "pressure_zone": props.get("PRESSURE_ZONE"),
+                    "pipe_size": props.get("DIAMETER"),
+                    "material": props.get("MATERIAL"),
+                    "source_id": "waterloo_city",
+                }
+            features.extend(data.get("features", []))
+        except Exception:
+            pass
+
+    return JSONResponse(content={"type": "FeatureCollection", "features": features})
+
+
+@app.get("/geo/building-permits")
+def geo_building_permits(limit: int = 1000, source: str = "", year: int = None):
+    """
+    Return building permit locations as GeoJSON, fetching geometry from ArcGIS.
+    Supports both Kitchener and Waterloo sources.
+    """
+    import httpx
+
+    features = []
+    where_clause = "1=1"
+    if year:
+        where_clause = f"ISSUE_YEAR = {year}"
+
+    # Kitchener building permits
+    if not source or source == "kitchener":
+        kit_url = (
+            "https://services1.arcgis.com/qAo1OsXi67t7XgmS/arcgis/rest/services"
+            "/Building_Permits/FeatureServer/0/query"
+        )
+        params = {
+            "f": "geojson",
+            "where": where_clause,
+            "outFields": "PERMITNO,PERMIT_TYPE,PERMIT_STATUS,WORK_TYPE,ISSUE_DATE,ISSUE_YEAR,CONSTRUCTION_VALUE,FOLDERNAME",
+            "returnGeometry": "true",
+            "outSR": "4326",
+            "resultRecordCount": min(limit, 2000),
+        }
+        try:
+            resp = httpx.get(kit_url, params=params, timeout=20.0)
+            resp.raise_for_status()
+            data = resp.json()
+            for feature in data.get("features", []):
+                props = feature.get("properties", {})
+                feature["properties"] = {k.lower(): v for k, v in props.items()}
+                feature["properties"]["source_id"] = "kitchener"
+            features.extend(data.get("features", []))
+        except Exception:
+            pass
+
+    # Waterloo building permits
+    if not source or source == "waterloo_city":
+        wat_url = (
+            "https://services.arcgis.com/ZpeBVw5o1kjit7LT/ArcGIS/rest/services"
+            "/City_of_Waterloo_Building_Permits/FeatureServer/0/query"
+        )
+        wat_where = "1=1"
+        if year:
+            wat_where = f"ISSUE_YEAR = {year}"
+        params = {
+            "f": "geojson",
+            "where": wat_where,
+            "outFields": "PERMIT_NUM,PERMITTYPE,STATUS,WORKDESC,ISSUEDATE,ISSUE_YEAR,CONTRVALUE,ADDRESS",
+            "returnGeometry": "true",
+            "outSR": "4326",
+            "resultRecordCount": min(limit, 2000),
+        }
+        try:
+            resp = httpx.get(wat_url, params=params, timeout=20.0)
+            resp.raise_for_status()
+            data = resp.json()
+            for feature in data.get("features", []):
+                props = feature.get("properties", {})
+                # Normalize field names to match Kitchener schema
+                feature["properties"] = {
+                    "permitno": props.get("PERMIT_NUM"),
+                    "permit_type": props.get("PERMITTYPE"),
+                    "permit_status": props.get("STATUS"),
+                    "work_type": props.get("WORKDESC"),
+                    "issue_date": props.get("ISSUEDATE"),
+                    "issue_year": props.get("ISSUE_YEAR"),
+                    "construction_value": props.get("CONTRVALUE"),
+                    "foldername": props.get("ADDRESS"),
+                    "source_id": "waterloo_city",
+                }
+            features.extend(data.get("features", []))
+        except Exception:
+            pass
+
+    return JSONResponse(content={"type": "FeatureCollection", "features": features})
+
+
 # ---------------------------------------------------------------------------
 # Webview endpoint — RBAC-filtered HTML table (legacy, deprecated)
 # ---------------------------------------------------------------------------

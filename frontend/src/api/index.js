@@ -112,6 +112,23 @@ export async function getBusStopsGeo(limit = 500) {
   return res.json();
 }
 
+export async function getWaterMainsGeo(limit = 2000, source = '') {
+  const params = new URLSearchParams({ limit });
+  if (source) params.append('source', source);
+  const res = await fetch(`${BASE}/geo/water-mains?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch water main geometry');
+  return res.json();
+}
+
+export async function getBuildingPermitsGeo(limit = 1000, source = '', year = null) {
+  const params = new URLSearchParams({ limit });
+  if (source) params.append('source', source);
+  if (year) params.append('year', year);
+  const res = await fetch(`${BASE}/geo/building-permits?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch building permit geometry');
+  return res.json();
+}
+
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
 export async function getSyncStatus() {
